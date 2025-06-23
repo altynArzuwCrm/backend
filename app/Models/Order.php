@@ -9,29 +9,46 @@ class Order extends Model
 {
     use HasFactory;
 
-    protected $fillable = ['title', 'client_id', 'status', 'manager_id', 'executor_id', 'stage_id'];
+    protected $fillable = [
+        'title',
+        'client_name',
+        'client_phone',
+        'status',
+        'deadline',
+        'is_completed',
+        'price',
+        'payment_amount',
+        'finalized_at',
+    ];
 
-    public function funnel()
+    protected $casts = [
+        'deadline' => 'datetime',
+        'finalized_at' => 'datetime',
+        'is_completed' => 'boolean',
+        'price' => 'decimal:2',
+        'payment_amount' => 'decimal:2',
+    ];
+    public function isFullyPaid(): bool
     {
-       return $this->belongsTo(Funnel::class);
+        return $this->price !== null && $this->payment_amount >= $this->price;
     }
 
-    public function manager()
+    public function isOverdue(): bool
     {
-        return $this->belongsTo(User::class)->where('role', 'manager');
+        return $this->deadline && $this->deadline->isPast() && !$this->is_completed;
+    }
+    public function items()
+    {
+        return $this->hasMany(OrderItem::class);
     }
 
-    public function executor() {
-        return $this->belongsTo(User::class)->where('role', 'executor');
+    public function comments()
+    {
+        return $this->hasMany(Comment::class);
     }
 
-    public function stage()
+    public function auditLogs()
     {
-        return $this->belongsTo(Stage::class);
-    }
-
-    public function client()
-    {
-       return $this->belongsTo(Client::class);
+        return $this->hasMany(AuditLog::class);
     }
 }

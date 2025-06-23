@@ -14,11 +14,14 @@ return new class extends Migration
         Schema::create('orders', function (Blueprint $table) {
             $table->id();
             $table->string('title');
-            $table->foreignId('client_id')->constrained()->cascadeOnDelete();
-            $table->enum('status', ['cannot_be_done', 'needs_revision', 'cancelled', 'done'])->default('needs_revision');
-            $table->foreignId('stage_id')->constrained()->cascadeOnDelete();
-            $table->foreignId('manager_id')->constrained('users')->cascadeOnDelete();
-            $table->foreignId('executor_id')->constrained('users')->cascadeOnDelete();
+            $table->string('client_name')->nullable();
+            $table->string('client_phone')->nullable();
+            $table->enum('status', ['draft', 'design', 'print', 'workshop', 'final', 'archived'])->default('draft');
+            $table->timestamp('deadline')->nullable();
+            $table->boolean('is_completed')->default(false);
+            $table->decimal('price', 10, 2)->nullable();
+            $table->decimal('payment_amount', 10, 2)->default(0);
+            $table->timestamp('finalized_at')->nullable();
             $table->timestamps();
         });
     }

@@ -2,81 +2,84 @@
 
 namespace App\Http\Controllers\Api;
 
-use App\Models\Order;
+use App\Http\Controllers\Controller;
 use App\Models\User;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Hash;
 
-class UserController
+class UserController extends Controller
 {
     public function index()
     {
-        $users = User::all();
+        $this->authorize('viewAny', User::class);
 
-        return response()->json($users);
+        return User::with('roles')->paginate(20);;
     }
 
     public function show(User $user)
     {
-        if (Gate::denies('view', $user)) {abort(403);}
-        return response()->json($user);
+        $this->authorize('view', $user);
+
+        return $user->load('roles');
     }
 
     public function store(Request $request)
     {
-        if (Gate::denies('create', User::class)) {abort(403);}
+        $this->authorize('create', User::class);
 
-        $validated = $request->validate([
-            'name' => 'required|string|max:255',
-            'surname' => 'required|string|max:255',
-            'phone' => 'required|digits:8|unique:users,phone',
+        $data = $request->validate([
+            'name' => 'required|string',
+            'login' => 'required|string|unique:users,login',
+            'phone' => 'nullable|string',
             'password' => 'required|string|min:6',
-            'role' => 'required|in:admin,manager,executor',
+            'roles' => 'array',
+            'roles.*' => 'exists:roles,id',
         ]);
 
-        if ($request->password) {
-            $validated['password'] = Hash::make($validated['password']);
+        $user = User::create([
+            'name' => $data['name'],
+            'login' => $data['login'],
+            'phone' => $data['phone'] ?? null,
+            'password' => Hash::make($data['password']),
+        ]);
+
+        if (!empty($data['roles'])) {
+            $user->roles()->sync($data['roles']);
         }
 
-        $user = User::create($validated);
-
-        return response()->json([
-            'message' => 'User created successfully',
-            'user' => $user,
-        ]);
+        return response()->json($user->load('roles'), 201);
     }
 
     public function update(Request $request, User $user)
     {
-        if (Gate::denies('update', $user)) {abort(403);}
+        $this->authorize('update', $user);
 
-        $validated = $request->validate([
-            'name' => 'sometimes|string|max:255',
-            'surname' => 'sometimes|string|max:255',
-            'phone' => 'sometimes|digits:8|unique:users,phone,' . $user->id,
-            'password' => 'sometimes|string|min:6',
-            'role' => 'sometimes|in:admin,manager,executor',
+        $data = $request->validate([
+            'name' => 'sometimes|string',
+            'phone' => 'nullable|string',
+            'password' => 'nullable|string|min:6',
+            'roles' => 'array',
+            'roles.*' => 'exists:roles,id',
         ]);
 
-        if (isset($validated['password'])) {
-            $validated['password'] = Hash::make($validated['password']);
+        if (isset($data['name'])) $user->name = $data['name'];
+        if (isset($data['phone'])) $user->phone = $data['phone'];
+        if (!empty($data['password'])) $user->password = Hash::make($data['password']);
+        $user->save();
+
+        if (isset($data['roles'])) {
+            $user->roles()->sync($data['roles']);
         }
 
-        $user->update($validated);
-
-        return response()->json([
-            'message' => 'User updated successfully',
-            'user' => $user,
-        ]);
+        return response()->json($user->load('roles'));
     }
 
     public function destroy(User $user)
     {
-        if (Gate::denies('delete', $user)) {abort(403);}
-
+        $this->authorize('delete', $user);
         $user->delete();
 
-        return response()->json(['message' => 'User deleted successfully']);
+        return response()->json(['message' => 'Пользователь удалён']);
     }
 }
+

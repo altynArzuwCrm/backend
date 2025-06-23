@@ -4,85 +4,65 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\User;
-use Illuminate\Support\Facades\Hash;
-use Illuminate\Support\Facades\Validator;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Hash;
 
 class AuthController extends Controller
 {
     public function register(Request $request)
     {
-        $validator = Validator::make($request->all(), [
-            'name' => 'required|string|max:255',
-            'surname' => 'required|string|max:255',
-            'phone' => 'required|digits:8|unique:users,phone',
-            'password' => 'required|string|min:6',
-            'role' => 'required|in:admin,manager,executor',
+        $data = $request->validate([
+            'username' => 'required|string|unique:users,username',
+            'password' => 'required|string|confirmed|min:6',
+            'name' => 'required|string',
+            'phone' => 'nullable|string',
         ]);
-
-        if ($validator->fails()) {
-            return response()->json([
-                'status' => false,
-                'message' => 'Validation error',
-                'errors' => $validator->errors(),
-            ], 422);
-        }
 
         $user = User::create([
-            'name' => $request->name,
-            'surname' => $request->surname,
-            'phone' => $request->phone,
-            'password' => Hash::make($request->password),
-            'role' => $request->role,
+            'username' => $data['username'],
+            'password' => Hash::make($data['password']),
+            'name' => $data['name'],
+            'phone' => $data['phone'] ?? null,
         ]);
 
+        $token = $user->createToken('api-token')->plainTextToken;
+
         return response()->json([
-            'status' => true,
-            'message' => 'User registered successfully',
-            'user' => [
-                'name' => $user->name,
-                'surname' => $user->surname,
-                'phone' => $user->phone,
-                'role' => $user->role,
-            ],
-        ], 200);
+            'user' => $user,
+            'token' => $token,
+        ], 201);
     }
 
     public function login(Request $request)
-   {
-       $validator = Validator::make($request->all(), [
-           'phone' => 'required|digits:8',
-           'password' => 'required|string|min:6',
-       ]);
+    {
+        $data = $request->validate([
+            'username' => 'required|string',
+            'password' => 'required|string',
+        ]);
 
-       if($validator->fails()) {
-           return response()->json([
-               'status' => false,
-               'message' => 'Validation error',
-               'errors' => $validator->errors(),
-           ], 422);
-       }
+        $user = User::where('username', $data['username'])->first();
 
-       $credentials = $request->only('phone', 'password');
+        if (!$user || !Hash::check($data['password'], $user->password)) {
+            return response()->json(['message' => 'Неверный логин или пароль'], 401);
+        }
 
-       if (!Auth::attempt($credentials)) {
-           return response()->json([
-               'status' => false,
-               'message' => 'Invalid credentials'
-           ], 401);
-       }
+        $token = $user->createToken('api-token')->plainTextToken;
 
-       $user = Auth::user();
+        return response()->json([
+            'user' => $user,
+            'token' => $token,
+        ]);
+    }
 
-       $token = $user->createToken('API Token')->plainTextToken;
+    public function logout(Request $request)
+    {
+        $request->user()->currentAccessToken()->delete();
 
-       return response()->json([
-          'status' => true,
-          'message' => 'User logged in successfully',
-          'id' => $user->id,
-          'access_token' => $token,
-          'token_type' => 'Bearer',
-       ]);
-   }
+        return response()->json(['message' => 'Вы успешно вышли']);
+    }
+
+    public function me(Request $request)
+    {
+        return response()->json($request->user());
+    }
 }

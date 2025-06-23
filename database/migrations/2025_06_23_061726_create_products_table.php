@@ -11,14 +11,13 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::create('users', function (Blueprint $table) {
+        Schema::create('products', function (Blueprint $table) {
             $table->id();
             $table->string('name');
-            $table->string('surname');
-            $table->enum('role', ['admin', 'manager', 'executor']);
-            $table->string('phone');
-            $table->string('password');
-            $table->rememberToken();
+            $table->foreignId('default_designer_id')->nullable()->constrained('users')->onDelete('set null');
+            $table->boolean('is_workshop_required')->default(false);
+            $table->enum('stage', ['design', 'print', 'workshop'])->nullable();
+            $table->enum('workshop_type', ['montage', 'binding'])->nullable();
             $table->timestamps();
         });
     }
@@ -28,8 +27,6 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::dropIfExists('users');
-        Schema::dropIfExists('password_reset_tokens');
-        Schema::dropIfExists('sessions');
+        Schema::dropIfExists('products');
     }
 };

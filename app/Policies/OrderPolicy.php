@@ -8,35 +8,42 @@ use Illuminate\Auth\Access\Response;
 
 class OrderPolicy
 {
-    public function view(User $user, Order $order)
+    public function viewAny(User $user): bool
     {
-        return in_array($user->role, ['admin', 'manager']) ||
-            ($user->role === 'executor' && $order->executor_id === $user->id);
+        return in_array($user->role, ['Админ', 'Менеджер']);
     }
 
-    public function viewAny(User $user)
+    public function view(User $user, Order $order): bool
     {
-        return in_array($user->role, ['admin', 'manager', 'executor']);
+        return $user->role === 'Админ'
+            || $user->role === 'Менеджер'
+            || $order->items()->where('designer_id', $user->id)->exists()
+            || $order->items()->where('printer_id', $user->id)->exists()
+            || $order->items()->where('workshop_worker_id', $user->id)->exists();
     }
 
-    public function create(User $user)
+    public function create(User $user): bool
     {
-        return in_array($user->role, ['admin', 'manager']);
+        return in_array($user->role, ['Админ', 'Менеджер']);
     }
 
-    public function update(User $user, Order $order)
+    public function update(User $user, Order $order): bool
     {
-        return in_array($user->role, ['admin', 'manager']);
+        return in_array($user->role, ['Админ', 'Менеджер']);
     }
 
-    public function updateStatus(User $user, Order $order)
+    public function delete(User $user, Order $order): bool
     {
-        return $user->role === 'executor' && $order->executor_id === $user->id;
+        return $user->role === 'Админ';
     }
 
-    public function delete(User $user, Order $order)
+    public function moveToNextStage(User $user, Order $order): bool
     {
-        return in_array($user->role, ['admin', 'manager']);
+        return in_array($user->role, ['Админ', 'Менеджер']);
     }
 
+    public function finalize(User $user, Order $order): bool
+    {
+        return in_array($user->role, ['Админ', 'Менеджер']);
+    }
 }
