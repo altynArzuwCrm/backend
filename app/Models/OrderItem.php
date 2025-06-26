@@ -13,15 +13,9 @@ class OrderItem extends Model
         'order_id',
         'product_id',
         'quantity',
-        'designer_id',
-        'printer_id',
-        'workshop_worker_id',
         'manager_id',
-        'individual_deadline',
+        'deadline',
         'status',
-        'assigned_at',
-        'started_at',
-        'completed_at',
     ];
 
 
@@ -30,24 +24,34 @@ class OrderItem extends Model
         return $this->belongsTo(Order::class);
     }
 
+    public function assignments()
+    {
+        return $this->hasMany(OrderItemAssignment::class);
+    }
+
     public function product()
     {
         return $this->belongsTo(Product::class);
     }
 
-    public function designer()
+    public function reason()
     {
-        return $this->belongsTo(User::class, 'designer_id');
+        return $this->belongsTo(Reason::class);
     }
 
-    public function printer()
+    public function designers()
     {
-        return $this->belongsTo(User::class, 'printer_id');
+        return $this->belongsToMany(User::class, 'order_item_designer', 'order_item_id');
     }
 
-    public function workshopWorker()
+    public function printers()
     {
-        return $this->belongsTo(User::class, 'workshop_worker_id');
+        return $this->belongsToMany(User::class, 'order_item_printer', 'order_item_id');
+    }
+
+    public function workshopWorkers()
+    {
+        return $this->belongsToMany(User::class, 'order_item_workshop_worker', 'order_item_id');
     }
 
     public function manager()
@@ -60,23 +64,26 @@ class OrderItem extends Model
         return $this->hasMany(Comment::class);
     }
 
-    public function isWaiting()
+    public function refreshStatusFromAssignments()
     {
-        return $this->status === 'ожидание';
-    }
+        $assignmnets = $this->assignments;
 
-    public function isInProgress()
-    {
-        return $this->status === 'в_работе';
-    }
+        if ($assignmnets->isEmpty()) {
+            $this->status = 'pending';
+        } elseif ($assignmnets->contains(fn($a) => $a->status === 'in_progress')) {
+            $this->status = 'in_progress';
+        } elseif ($assignmnets->contains(fn($a) => $a->status === 'under_review')) {
+            $this->status = 'under_review';
+        } elseif ($assignmnets->every(fn($a) => in_array($a->status, ['approved', 'completed']))) {
+            $this->status = 'completed';
+        } elseif ($assignmnets->contains(fn($a) => $a->status === 'cancelled')) {
+            $this->status = 'cancelled';
+        } else {
+            $this->status = 'pending';
+        }
 
-    public function isCompleted()
-    {
-        return $this->status === 'завершено';
-    }
+        $this->save();
 
-    public function isCanceled()
-    {
-        return $this->status === 'отменено';
+        $this->order->refreshStage();
     }
 }

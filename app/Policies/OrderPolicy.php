@@ -3,47 +3,66 @@
 namespace App\Policies;
 
 use App\Models\Order;
+use App\Models\OrderItem;
 use App\Models\User;
-use Illuminate\Auth\Access\Response;
 
 class OrderPolicy
 {
-    public function viewAny(User $user): bool
+    protected function roleId(User $user)
     {
-        return in_array($user->role, ['Админ', 'Менеджер']);
+        return $user->role_id;
     }
 
-    public function view(User $user, Order $order): bool
+    public function viewAny(User $user)
     {
-        return $user->role === 'Админ'
-            || $user->role === 'Менеджер'
-            || $order->items()->where('designer_id', $user->id)->exists()
-            || $order->items()->where('printer_id', $user->id)->exists()
-            || $order->items()->where('workshop_worker_id', $user->id)->exists();
+        return in_array($this->roleId($user), [1, 2]);
     }
 
-    public function create(User $user): bool
+    public function view(User $user, Order $order)
     {
-        return in_array($user->role, ['Админ', 'Менеджер']);
+        $stageAccessMap = [
+            'design'    => 3,
+            'print'     => 4,
+            'workshop'  => 5,
+            'finalize'  => [1, 2],
+            'cancelled' => [1, 2],
+            'archived'  => [1, 2],
+        ];
+
+        $roleId = $user->role_id;
+        $stage = $order->stage;
+
+        if (!isset($stageAccessMap[$stage])) {
+            return $roleId === 1;
+        }
+
+        $allowedRoles = (array) $stageAccessMap[$stage];
+
+        return in_array($roleId, $allowedRoles);
     }
 
-    public function update(User $user, Order $order): bool
+    public function updateStatus(User $user, OrderItem $orderItem)
     {
-        return in_array($user->role, ['Админ', 'Менеджер']);
+        return $orderItem->user_id->role === [1,2];
     }
 
-    public function delete(User $user, Order $order): bool
+    public function create(User $user)
     {
-        return $user->role === 'Админ';
+        return in_array($this->roleId($user), [1, 2]);
     }
 
-    public function moveToNextStage(User $user, Order $order): bool
+    public function update(User $user, Order $order)
     {
-        return in_array($user->role, ['Админ', 'Менеджер']);
+        return in_array($this->roleId($user), [1, 2]);
     }
 
-    public function finalize(User $user, Order $order): bool
+    public function delete(User $user, Order $order)
     {
-        return in_array($user->role, ['Админ', 'Менеджер']);
+        return $this->roleId($user) === [1,2];
+    }
+
+    public function cancel(User $user, Order $order)
+    {
+        return in_array($this->roleId($user), [1, 2]);
     }
 }

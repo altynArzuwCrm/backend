@@ -4,13 +4,16 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Order;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Http\Request;
 
 class OrderController extends Controller
 {
     public function index(Request $request)
     {
-        $this->authorize('viewAny', Order::class);
+        if (Gate::denies('viewAny', Order::class)) {
+            abort(403, 'Доступ запрещён');
+        }
 
         $orders = Order::with('items')
             ->orderByDesc('created_at')
@@ -21,7 +24,9 @@ class OrderController extends Controller
 
     public function show(Order $order)
     {
-        $this->authorize('view', $order);
+        if (Gate::denies('view', $order)) {
+            abort(403, 'Доступ запрещён');
+        }
 
         $order->load('items');
 
@@ -30,18 +35,20 @@ class OrderController extends Controller
 
     public function store(Request $request)
     {
-        $this->authorize('create', Order::class);
+        if (Gate::denies('create', Order::class)) {
+            abort(403, 'Доступ запрещён');
+        }
 
         $data = $request->validate([
             'title' => 'required|string|max:255',
-            'client_name' => 'nullable|string|max:255',
-            'client_phone' => 'nullable|string|max:255',
+            'client_id' => 'required|exists:clients,id',
             'deadline' => 'nullable|date',
             'price' => 'nullable|numeric|min:0',
             'payment_amount' => 'nullable|numeric|min:0',
         ]);
 
-        $data['status'] = 'draft';
+        $data['stage'] = 'draft';
+        $data['status'] = null;
 
         $order = Order::create($data);
 
@@ -50,62 +57,100 @@ class OrderController extends Controller
 
     public function update(Request $request, Order $order)
     {
-        $this->authorize('update', $order);
+        if (Gate::denies('update', $order)) {
+            abort(403, 'Доступ запрещён');
+        }
 
         $data = $request->validate([
             'title' => 'sometimes|string|max:255',
-            'client_name' => 'nullable|string|max:255',
-            'client_phone' => 'nullable|string|max:255',
+            'client_id' => 'sometimes|exists:clients,id',
             'deadline' => 'nullable|date',
             'price' => 'nullable|numeric|min:0',
             'payment_amount' => 'nullable|numeric|min:0',
-            'is_completed' => 'boolean',
-            'status' => 'in:draft,design,print,workshop,final,archived',
         ]);
-
-        if (isset($data['status']) && $data['status'] !== $order->status) {
-            $this->handleStatusTransition($order, $data['status']);
-        }
 
         $order->update($data);
 
         return response()->json($order);
     }
 
-    protected function handleStatusTransition(Order $order, string $newStatus)
-    {
-        $validTransitions = [
-            'draft' => ['design'],
-            'design' => ['print', 'workshop'],
-            'print' => ['workshop', 'final'],
-            'workshop' => ['final'],
-            'final' => ['archived'],
-        ];
-
-        $current = $order->status;
-
-        if (isset($validTransitions[$current]) && in_array($newStatus, $validTransitions[$current])) {
-            if ($newStatus === 'final') {
-                if (!$order->is_completed || $order->price > $order->payment_amount) {
-                    abort(422, 'Заказ не может быть завершён: проверьте выполнение и оплату.');
-                }
-                $order->finalized_at = now();
-            }
-
-            if ($newStatus === 'archived') {
-                $order->finalized_at = now();
-            }
-        } else {
-            abort(422, 'Недопустимый переход между статусами.');
-        }
-    }
-
     public function destroy(Order $order)
     {
-        $this->authorize('delete', $order);
+        if (Gate::denies('delete', $order)) {
+            abort(403, 'Доступ запрещён');
+        }
 
         $order->delete();
 
         return response()->json(['message' => 'Заказ удалён']);
+    }
+
+    public function updateStatus(Request $request, Order $order)
+    {
+        if (Gate::denies('updateStatus', $order)) {
+            abort(403, 'Доступ запрещён');
+        }
+
+        $request->validate([
+            'status' => 'required|in:draft,design,print,workshop,final,archived',
+        ]);
+
+        $order->status = $request->status;
+        $order->save();
+
+        return response()->json([
+            'message' => 'Статус обновлён',
+            'status' => $order->status,
+            'assignment_id' => $order->id
+        ]);
+    }
+
+    public function markAsCancelled(Order $order)
+    {
+        if (Gate::denies('update', $order)) {
+            abort(403, 'Доступ запрещён');
+        }
+
+        $this->authorize('update', $order);
+
+        $order->update(['status' => 'cancelled']);
+
+        return response()->json(['message' => 'Статус заказа установлен как "cancelled"']);
+    }
+
+    public function markAsCompleted(Order $order)
+    {
+        if (Gate::denies('update', $order)) {
+            abort(403, 'Доступ запрещён');
+        }
+
+        $this->authorize('update', $order);
+
+        $order->update(['status' => 'completed']);
+
+        return response()->json(['message' => 'Статус заказа установлен как "completed"']);
+    }
+
+    public function cancelOrder(Request $request, Order $order)
+    {
+        if (Gate::denies('update', $order)) {
+            abort(403, 'Доступ запрещён');
+        }
+        $request->validate([
+            'reasons' => 'array',
+            'reasons.*.order_item_id' => 'required|exists:order_items,id',
+            'reasons.*.reason_id' => 'required|exists:reasons,id',
+        ]);
+
+        $order->update(['status' => 'cancelled']);
+
+        foreach ($request->input('reasons') as $reasonData) {
+            $item = $order->items()->find($reasonData['order_item_id']);
+            if ($item) {
+                $item->update(['reason_id' => $reasonData['reason_id']]);
+            }
+        }
+
+        return response()->json(['message' => 'Order cancelled with reasons']);
     }
 }

@@ -5,14 +5,14 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
-class Role extends Model
+class Client extends Model
 {
     use HasFactory;
 
-    protected $fillable = ['name'];
+    protected $fillable = ['name', 'company_name'];
 
-    public function users()
+    public function contacts()
     {
-        return $this->hasMany(User::class, 'role_id');
+        return $this->hasMany(ClientContact::class);
     }
 }

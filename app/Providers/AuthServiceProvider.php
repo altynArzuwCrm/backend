@@ -13,6 +13,7 @@ use App\Policies\OrderPolicy;
 use App\Policies\RolePolicy;
 use App\Policies\UserPolicy;
 use Illuminate\Foundation\Support\Providers\AuthServiceProvider as ServiceProvider;
+use Illuminate\Support\Facades\Log;
 
 class AuthServiceProvider extends ServiceProvider
 {
@@ -23,5 +24,4 @@ class AuthServiceProvider extends ServiceProvider
         Comment::class => CommentPolicy::class,
         Role::class => RolePolicy::class,
     ];
-
 }

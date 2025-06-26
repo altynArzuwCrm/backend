@@ -13,18 +13,13 @@ return new class extends Migration
     {
         Schema::create('order_items', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('order_id')->constrained()->onDelete('cascade');
-            $table->foreignId('product_id')->constrained()->onDelete('cascade');
+            $table->foreignId('order_id')->constrained()->cascadeOnDelete();
+            $table->foreignId('product_id')->constrained()->cascadeOnDelete();
+            $table->foreignId('reason_id')->nullable()->constrained()->nullOnDelete();
             $table->unsignedInteger('quantity')->default(1);
-            $table->foreignId('designer_id')->nullable()->constrained('users')->onDelete('set null');
-            $table->foreignId('printer_id')->nullable()->constrained('users')->onDelete('set null');
-            $table->foreignId('workshop_worker_id')->nullable()->constrained('users')->onDelete('set null');
-            $table->foreignId('manager_id')->nullable()->constrained('users')->onDelete('set null');
-            $table->timestamp('individual_deadline')->nullable();
-            $table->enum('status', ['ожидание', 'в_работе', 'завершено', 'отменено'])->default('ожидание');
-            $table->timestamp('assigned_at')->nullable();
-            $table->timestamp('started_at')->nullable();
-            $table->timestamp('completed_at')->nullable();
+            $table->foreignId('manager_id')->nullable()->constrained('users')->nullOnDelete();
+            $table->timestamp('deadline')->nullable();
+            $table->enum('status', ['pending', 'in_progress', 'completed', 'cancelled', 'under_review'])->default('pending');
             $table->timestamps();
         });
     }

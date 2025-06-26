@@ -10,21 +10,21 @@ class ProductController extends Controller
 {
     public function index()
     {
-        $this->authorize('viewAny', Product::class);
+//        $this->authorize('viewAny', Product::class);
 
         return Product::with('defaultDesigner')->get();
     }
 
     public function show(Product $product)
     {
-        $this->authorize('view', $product);
+//        $this->authorize('view', $product);
 
         return $product->load('defaultDesigner');
     }
 
     public function store(Request $request)
     {
-        $this->authorize('create', Product::class);
+//        $this->authorize('create', Product::class);
 
         $data = $request->validate([
             'name' => 'required|string',
@@ -40,7 +40,7 @@ class ProductController extends Controller
 
     public function update(Request $request, Product $product)
     {
-        $this->authorize('update', $product);
+//        $this->authorize('update', $product);
 
         $data = $request->validate([
             'name' => 'sometimes|string',
@@ -56,7 +56,7 @@ class ProductController extends Controller
 
     public function destroy(Product $product)
     {
-        $this->authorize('delete', $product);
+//        $this->authorize('delete', $product);
 
         $product->delete();
 

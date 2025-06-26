@@ -16,6 +16,7 @@ class AuthController extends Controller
             'password' => 'required|string|confirmed|min:6',
             'name' => 'required|string',
             'phone' => 'nullable|string',
+            'role_id' => 'required|exists:roles,id',
         ]);
 
         $user = User::create([
@@ -23,7 +24,10 @@ class AuthController extends Controller
             'password' => Hash::make($data['password']),
             'name' => $data['name'],
             'phone' => $data['phone'] ?? null,
+            'role_id' => $data['role_id'],
         ]);
+
+        $user->load('role');
 
         $token = $user->createToken('api-token')->plainTextToken;
 
@@ -46,6 +50,8 @@ class AuthController extends Controller
             return response()->json(['message' => 'Неверный логин или пароль'], 401);
         }
 
+        $user->load('role');
+
         $token = $user->createToken('api-token')->plainTextToken;
 
         return response()->json([
@@ -63,6 +69,7 @@ class AuthController extends Controller
 
     public function me(Request $request)
     {
-        return response()->json($request->user());
+        $user = $request->user()->load('role');
+        return response()->json($user);
     }
 }

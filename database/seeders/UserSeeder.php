@@ -15,25 +15,42 @@ class UserSeeder extends Seeder
      */
     public function run(): void
     {
-
         $users = [
-          [
-              'name' => 'Администратор',
-              'username' => 'admin',
-              'password' => Hash::make('password123')
-          ],
-          [
-              'name' => 'Менеджер',
-              'username' => 'manager',
-              'password' => Hash::make('password123')
-          ]
+            [
+                'name' => 'Aylana',
+                'username' => 'lana06',
+                'image' => null,
+                'password' => Hash::make('password123'),
+                'role' => 'Админ',
+            ],
+            [
+                'name' => 'Test',
+                'username' => 'test00',
+                'image' => 'users/manager.jpg',
+                'password' => Hash::make('password123'),
+                'role' => 'Сотрудник цеха',
+            ],
+            [
+                'name' => 'Test1',
+                'username' => 'test01',
+                'image' => null,
+                'password' => Hash::make('password123'),
+                'role' => 'Дизайнер',
+            ]
         ];
 
-        foreach ($users as $user) {
-            User::firstOrCreate(
-                ['username' => $user['username']],
-                $user
-            );
+        foreach ($users as $userData) {
+            $roleName = $userData['role'] ?? null;
+            unset($userData['role']);
+
+            $role = Role::where('name', $roleName)->first();
+            if (!$role) {
+                throw new \Exception("Роль $roleName не найдена");
+            }
+
+            $userData['role_id'] = $role->id;
+
+            User::create($userData);
         }
     }
 }

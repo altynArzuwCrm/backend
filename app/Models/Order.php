@@ -28,6 +28,7 @@ class Order extends Model
         'price' => 'decimal:2',
         'payment_amount' => 'decimal:2',
     ];
+
     public function isFullyPaid(): bool
     {
         return $this->price !== null && $this->payment_amount >= $this->price;
@@ -37,6 +38,7 @@ class Order extends Model
     {
         return $this->deadline && $this->deadline->isPast() && !$this->is_completed;
     }
+
     public function items()
     {
         return $this->hasMany(OrderItem::class);
@@ -50,5 +52,27 @@ class Order extends Model
     public function auditLogs()
     {
         return $this->hasMany(AuditLog::class);
+    }
+
+    public function refreshStage()
+    {
+        $stages = ['draft', 'design', 'print', 'workshop', 'finalize', 'archived'];
+
+        $currentStageIndex = array_search($this->stage, $stages);
+
+        if ($currentStageIndex === false) {
+            $this->stage = 'draft';
+            $this->save();
+            return;
+        }
+
+        $allCompleted = $this->items()
+            ->get()
+            ->every(fn($item) => $item->status === 'completed');
+
+        if ($allCompleted && $currentStageIndex < count($stages) - 1) {
+            $this->stage = $stages[$currentStageIndex + 1];
+            $this->save();
+        }
     }
 }

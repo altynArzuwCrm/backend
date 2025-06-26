@@ -12,6 +12,11 @@ class CommentPolicy
 {
     use HandlesAuthorization;
 
+    public function viewAny(User $user)
+    {
+        return true;
+    }
+
     public function view(User $user, Comment $comment)
     {
         if ($user->id === $comment->user_id) {

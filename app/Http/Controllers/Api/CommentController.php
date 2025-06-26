@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Comment;
 use App\Models\Order;
 use App\Models\OrderItem;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 
@@ -23,12 +24,16 @@ class CommentController extends Controller
 
        if ($orderId) {
            $order = Order::findOrFail($orderId);
-           $this->authorize('view', $order);
+           if (Gate::denies('view', $order)) {
+               return response()->json(['error' => 'Доступ запрещён'], 403);
+           }
            $comments = $order->comments()->with('user')->get();
        }
        elseif ($orderItemId) {
            $orderItem = OrderItem::findOrFail($orderItemId);
-           $this->authorize('view', $orderItem);
+           if (Gate::denies('view', $orderItem)) {
+               return response()->json(['error' => 'Доступ запрещён'], 403);
+           }
            $comments = $orderItem->comments()->with('user')->get();
        } else {
            return response()->json(['error' => 'order_id или order_item_id обязателен'], 402);
@@ -42,7 +47,7 @@ class CommentController extends Controller
        $data = $request->validate([
            'text' => 'required|string',
            'order_id' => 'nullable|exists:orders,id',
-           'order_items_id' => 'nullable|exists:order_items,id'
+           'order_item_id' => 'nullable|exists:order_items,id'
        ]);
 
        if (empty($data['order_id']) && empty($data['order_item_id'])) {
@@ -55,10 +60,14 @@ class CommentController extends Controller
 
        if (!empty($data['order_id'])) {
            $order = Order::findOrFail($data['order_id']);
-           $this->authorize('view', $order);
+           if (Gate::denies('view', $order)) {
+               return response()->json(['error' => 'Доступ запрещён'], 403);
+           }
        } else {
            $orderItem = OrderItem::findOrFail($data['order_item_id']);
-           $this->authorize('view', $orderItem);
+           if (Gate::denies('view', $orderItem)) {
+               return response()->json(['error' => 'Доступ запрещён'], 403);
+           }
        }
 
        $comment = Comment::create([
@@ -77,7 +86,7 @@ class CommentController extends Controller
        return response()->json($comment->load('user'));
    }
 
-   public function delete(Comment $comment)
+   public function destroy(Comment $comment)
    {
        $this->authorize('delete', $comment);
        $comment->delete();
