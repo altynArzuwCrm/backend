@@ -1,10 +1,10 @@
 <?php
 
 namespace App\Policies;
-use App\Models\Order;
+use App\Models\Project;
 use App\Models\User;
 
-class OrderPolicy
+class ProjectPolicy
 {
     public function viewAny(User $user)
     {
@@ -15,20 +15,16 @@ class OrderPolicy
         return $user->assignedOrders()->exists();
     }
 
-    public function view(User $user, Order $order)
+    public function view(User $user, Project $project)
     {
         if (in_array($user->role, ['admin', 'manager'])) {
             return true;
         }
 
-        return $order->assignments()
-            ->where('user_id', $user->id)
-            ->exists();
-    }
-
-    public function updateStatus(User $user, Order $order)
-    {
-        return in_array($user->role, ['admin', 'manager']);
+        return $project->orders()
+            ->whereHas('assignments', function ($query) use ($user) {
+                $query->where('user_id', $user->id);
+            })->exists();
     }
 
     public function create(User $user)
@@ -36,13 +32,13 @@ class OrderPolicy
         return in_array($user->role, ['admin', 'manager']);
     }
 
-    public function update(User $user, Order $order)
+    public function update(User $user, Project $project)
     {
         return in_array($user->role, ['admin', 'manager']);
     }
 
-    public function delete(User $user, Order $order)
+    public function delete(User $user, Project $project)
     {
         return in_array($user->role, ['admin', 'manager']);
     }
-}
+} 

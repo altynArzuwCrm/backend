@@ -4,7 +4,6 @@ namespace Database\Factories;
 
 use App\Models\Order;
 use App\Models\Product;
-use App\Models\Reason;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
@@ -20,14 +19,15 @@ class OrderItemFactory extends Factory
      */
     public function definition(): array
     {
+        $managers = User::where('role', 'manager')->get();
         return [
             'order_id' => Order::inRandomOrder()->value('id') ?? 1,
             'product_id' => Product::inRandomOrder()->value('id') ?? 1,
-            'reason_id' => Reason::inRandomOrder()->value('id'),
             'quantity' => $this->faker->numberBetween(1, 50),
-            'manager_id' => User::inRandomOrder()->value('id'),
+            'manager_id' => $managers->isNotEmpty() ? $managers->random()->id : null,
+            'price' => fake()->optional()->randomFloat(2, 10, 1000),
             'deadline' => $this->faker->optional()->dateTimeBetween('now', '+7 days'),
-            'status' => $this->faker->randomElement(['pending', 'in_progress', 'completed', 'cancelled', 'under_review']),
+            'stage' => $this->faker->randomElement(['draft', 'design', 'print', 'workshop', 'final', 'archived', 'completed', 'cancelled']),
         ];
     }
 }

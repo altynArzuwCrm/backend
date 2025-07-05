@@ -4,102 +4,95 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Client;
-use App\Models\ClientContact;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Gate;
 
 class ClientController extends Controller
 {
-    public function index()
+    public function index(Request $request)
     {
-        $clients = Client::with('contacts')->paginate(20);
-        return response()->json($clients);
-    }
+        if (Gate::denies('viewAny', Client::class)) {
+            abort(403, 'Доступ запрещён');
+        }
 
-    public function show(Client $client)
-    {
-        $client->load('contacts');
-        return response()->json($client);
-    }
+        $query = Client::with('contacts');
 
-    public function store(Request $request)
-    {
-        $data = $request->validate([
-            'name' => 'required|string|max:255',
-            'company_name' => 'nullable|string|max:255',
-            'contacts' => 'array',
-            'contacts.*.type' => 'required|in:phone,email,telegram,whatsapp,instagram,other',
-            'contacts.*.value' => 'required|string|max:255',
-        ]);
+        $sortBy = $request->get('sort_by', 'id');
+        $sortOrder = $request->get('sort_order', 'asc');
 
-        $client = Client::create([
-            'name' => $data['name'],
-            'company_name' => $data['company_name'] ?? null,
-        ]);
+        $allowedSorts = ['id', 'name', 'company_name', 'created_at'];
+        if (in_array($sortBy, $allowedSorts)) {
+            $query->orderBy($sortBy, $sortOrder);
+        }
 
-        if (!empty($data['contacts'])) {
-            foreach ($data['contacts'] as $contact) {
-                $client->contacts()->create($contact);
+        if ($request->has('search')) {
+            $search = $request->input('search');
+            if (mb_strlen($search) >= 3) {
+                $query->where('name', 'like', "%{$search}%");
             }
         }
 
-        $client->load('contacts');
-        return response()->json($client, 201);
+        $clients = $query->paginate(10);
+
+        return response()->json($clients, 200);
     }
 
-    public function update(Request $request, Client $client)
+    public function allClients()
     {
-        $data = $request->validate([
-            'name' => 'sometimes|string|max:255',
-            'company_name' => 'nullable|string|max:255',
-            'contacts' => 'array',
-            'contacts.*.id' => 'sometimes|exists:client_contacts,id',
-            'contacts.*.type' => 'required_with:contacts.*.value|in:phone,email,telegram,whatsapp,instagram,other',
-            'contacts.*.value' => 'required_with:contacts.*.type|string|max:255',
-        ]);
-
-        if (isset($data['name'])) {
-            $client->name = $data['name'];
-        }
-        if (array_key_exists('company_name', $data)) {
-            $client->company_name = $data['company_name'];
-        }
-        $client->save();
-
-        if (!empty($data['contacts'])) {
-            foreach ($data['contacts'] as $contactData) {
-                if (isset($contactData['id'])) {
-                    $contact = $client->contacts()->find($contactData['id']);
-                    if ($contact) {
-                        $contact->update([
-                            'type' => $contactData['type'],
-                            'value' => $contactData['value'],
-                        ]);
-                    }
-                } else {
-                    $client->contacts()->create([
-                        'type' => $contactData['type'],
-                        'value' => $contactData['value'],
-                    ]);
-                }
-            }
+        if (Gate::denies('allClients', Client::class)) {
+            abort(403, 'Доступ запрещён');
         }
 
-        $client->load('contacts');
-        return response()->json($client);
+        return Client::with('contacts')->orderBy('id')->get();
     }
 
-    public function destroy(Client $client)
-    {
-        $client->delete();
+   public function show(Client $client)
+   {
+       if (Gate::denies('view', $client)) {
+           abort(403, 'Доступ запрещён');
+       }
+       return response()->json($client);
+   }
 
-        return response()->json(['message' => 'Клиент удалён']);
-    }
+   public function store(Request $request)
+   {
+       if (Gate::denies('create', Client::class)) {
+           abort(403, 'Доступ запрещён');
+       }
 
-    public function destroyContact(ClientContact $contact)
-    {
-        $contact->delete();
+       $data =  $request->validate([
+          'name' =>  'required|string|max:255',
+          'company_name' => 'nullable|string|max:225',
+       ]);
 
-        return response()->json(['message' => 'Контакт удалён']);
-    }
+       $client = Client::create($data);
+
+       return response()->json($client, 201);
+   }
+
+   public function update(Request $request, Client $client)
+   {
+       if (Gate::denies('update', $client)) {
+           abort(403, 'Доступ запрещён');
+       }
+       $data = $request->validate([
+          'name' => 'sometimes|string|max:255',
+          'company_name' => 'nullable|string|max:255',
+       ]);
+
+       $client->update($data);
+
+       return response()->json($client);
+   }
+
+   public function destroy(Client $client)
+   {
+       if (Gate::denies('delete', $client)) {
+           abort(403, 'Доступ запрещён');
+       }
+       $client->delete();
+
+       return response()->json(['message' => 'Клиент удалён']);
+   }
 }
 

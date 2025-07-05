@@ -17,21 +17,21 @@ class OrderItemSeeder extends Seeder
         OrderItem::create([
             'order_id' => 1,
             'product_id' => 1,
-            'reason_id' => null,
             'quantity' => 10,
             'manager_id' => 2,
             'deadline' => Carbon::now()->addDays(5),
-            'status' => 'pending',
+            'stage' => 'print',
+            'price' => null,
         ]);
 
         OrderItem::create([
             'order_id' => 1,
             'product_id' => 2,
-            'reason_id' => 1,
             'quantity' => 3,
             'manager_id' => null,
             'deadline' => Carbon::now()->addDays(2),
-            'status' => 'in_progress',
+            'stage' => 'design',
+            'price' => null,
         ]);
     }
 }

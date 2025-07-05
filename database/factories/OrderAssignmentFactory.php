@@ -2,23 +2,23 @@
 
 namespace Database\Factories;
 
-use App\Models\OrderItem;
-use App\Models\OrderItemAssignment;
+use App\Models\Order;
+use App\Models\OrderAssignment;
 use App\Models\User;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 /**
- * @extends \Illuminate\Database\Eloquent\Factories\Factory<\App\Models\OrderItemAssignment>
+ * @extends \Illuminate\Database\Eloquent\Factories\Factory<\App\Models\OrderAssignment>
  */
-class OrderItemAssignmentFactory extends Factory
+class OrderAssignmentFactory extends Factory
 {
     /**
      * Define the model's default state.
      *
      * @return array<string, mixed>
      */
-    protected $model = OrderItemAssignment::class;
+    protected $model = OrderAssignment::class;
 
     public function definition(): array
     {
@@ -46,11 +46,11 @@ class OrderItemAssignmentFactory extends Factory
         };
 
         return array_merge([
-            'order_item_id' => OrderItem::inRandomOrder()->value('id') ?? OrderItem::factory(),
+            'order_id'      => Order::inRandomOrder()->value('id') ?? Order::factory(),
             'user_id'       => $workers->isNotEmpty() ? $workers->random()->id : User::factory(),
             'status'        => $status,
             'assigned_at'   => $baseTime,
             'assigned_by'   => User::inRandomOrder()->value('id') ?? User::factory(),
         ], $timestamps);
     }
-}
+} 

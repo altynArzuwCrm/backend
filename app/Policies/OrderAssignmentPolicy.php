@@ -2,10 +2,10 @@
 
 namespace App\Policies;
 
-use App\Models\OrderItemAssignment;
+use App\Models\OrderAssignment;
 use App\Models\User;
 
-class OrderItemAssignmentPolicy
+class OrderAssignmentPolicy
 {
     public function assign(User $user)
     {
@@ -24,10 +24,10 @@ class OrderItemAssignmentPolicy
             return true;
         }
 
-        return $user->assignedOrderItems()->exists();
+        return $user->assignedOrders()->exists();
     }
 
-    public function view(User $user, OrderItemAssignment $assignment)
+    public function view(User $user, OrderAssignment $assignment)
     {
         if (in_array($user->role, ['admin', 'manager'])) {
             return true;
@@ -36,8 +36,12 @@ class OrderItemAssignmentPolicy
         return $assignment->user_id === $user->id;
     }
 
-    public function updateStatus(User $user, OrderItemAssignment $assignment)
+    public function updateStatus(User $user, OrderAssignment $assignment)
     {
+        if (in_array($user->role, ['admin', 'manager'])) {
+            return true;
+        }
+
         return $user->id === $assignment->user_id;
     }
 }

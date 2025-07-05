@@ -2,7 +2,9 @@
 
 namespace Database\Factories;
 
-use App\Models\Client;
+use App\Models\Project;
+use App\Models\Product;
+use App\Models\User;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 /**
@@ -17,15 +19,15 @@ class OrderFactory extends Factory
      */
     public function definition(): array
     {
+        $managers = User::where('role', 'manager')->get();
         return [
-            'title' => fake()->title(),
-            'client_id' => Client::inRandomOrder()->first()->id,
-            'status' => $this->faker->randomElement(['completed', 'cancelled']),
-            'stage' => $this->faker->randomElement(['draft', 'design', 'print', 'workshop', 'final', 'archived']),
-            'deadline' => fake()->dateTime(),
+            'project_id' => Project::inRandomOrder()->value('id') ?? 1,
+            'product_id' => Product::inRandomOrder()->value('id') ?? 1,
+            'quantity' => $this->faker->numberBetween(1, 50),
+            'manager_id' => $managers->isNotEmpty() ? $managers->random()->id : null,
             'price' => fake()->optional()->randomFloat(2, 10, 1000),
-            'payment_amount' => fake()->randomFloat(2, 0, 1000),
-            'finalized_at' => fake()->optional()->dateTimeBetween('-1 month', 'now'),
+            'deadline' => $this->faker->optional()->dateTimeBetween('now', '+7 days'),
+            'stage' => $this->faker->randomElement(['draft', 'design', 'print', 'workshop', 'final', 'archived', 'completed', 'cancelled']),
         ];
     }
 }

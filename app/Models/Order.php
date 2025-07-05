@@ -10,38 +10,40 @@ class Order extends Model
     use HasFactory;
 
     protected $fillable = [
-        'title',
-        'client_name',
-        'client_phone',
-        'status',
+        'project_id',
+        'product_id',
+        'quantity',
+        'manager_id',
         'deadline',
-        'is_completed',
         'price',
-        'payment_amount',
-        'finalized_at',
+        'stage',
+        'reason',
+        'reason_status'
     ];
 
     protected $casts = [
         'deadline' => 'datetime',
-        'finalized_at' => 'datetime',
-        'is_completed' => 'boolean',
-        'price' => 'decimal:2',
-        'payment_amount' => 'decimal:2',
+        'price' => 'decimal:2'
     ];
 
-    public function isFullyPaid(): bool
+    public function project()
     {
-        return $this->price !== null && $this->payment_amount >= $this->price;
+        return $this->belongsTo(Project::class);
     }
 
-    public function isOverdue(): bool
+    public function assignments()
     {
-        return $this->deadline && $this->deadline->isPast() && !$this->is_completed;
+        return $this->hasMany(OrderAssignment::class);
     }
 
-    public function items()
+    public function product()
     {
-        return $this->hasMany(OrderItem::class);
+        return $this->belongsTo(Product::class);
+    }
+
+    public function manager()
+    {
+        return $this->belongsTo(User::class, 'manager_id');
     }
 
     public function comments()
@@ -54,25 +56,8 @@ class Order extends Model
         return $this->hasMany(AuditLog::class);
     }
 
-    public function refreshStage()
+    public function statusLogs()
     {
-        $stages = ['draft', 'design', 'print', 'workshop', 'finalize', 'archived'];
-
-        $currentStageIndex = array_search($this->stage, $stages);
-
-        if ($currentStageIndex === false) {
-            $this->stage = 'draft';
-            $this->save();
-            return;
-        }
-
-        $allCompleted = $this->items()
-            ->get()
-            ->every(fn($item) => $item->status === 'completed');
-
-        if ($allCompleted && $currentStageIndex < count($stages) - 1) {
-            $this->stage = $stages[$currentStageIndex + 1];
-            $this->save();
-        }
+        return $this->hasMany(OrderStatusLog::class);
     }
 }

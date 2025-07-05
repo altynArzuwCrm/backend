@@ -5,14 +5,15 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
-class OrderItemAssignment extends Model
+class OrderAssignment extends Model
 {
     use HasFactory;
-    protected $fillable = ['order_item_id', 'user_id', 'status', 'assigned_by', 'cancelled_at', 'approved_at', 'started_at', 'completed_at', 'assigned_at'];
+    
+    protected $fillable = ['order_id', 'user_id', 'status', 'assigned_by', 'cancelled_at', 'approved_at', 'started_at', 'completed_at', 'assigned_at'];
 
-    public function orderItem()
+    public function order()
     {
-        return $this->belongsTo(OrderItem::class);
+        return $this->belongsTo(Order::class);
     }
 
     public function user()
@@ -52,7 +53,7 @@ class OrderItemAssignment extends Model
         });
 
         static::saved(function ($assignment) {
-            // $assignment->orderItem->refreshStatusFromAssignments();
+            // $assignment->order->refreshStatusFromAssignments();
         });
     }
-}
+} 

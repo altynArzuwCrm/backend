@@ -12,28 +12,28 @@ class UserPolicy
 
     public function before(User $authUser, $ability)
     {
-        if ($authUser->roles->pluck('name')->contains('Админ')) {
+        if (in_array($authUser->role, ['admin', 'manager'])) {
             return true;
         }
     }
 
     public function viewAny(User $authUser)
     {
-        return $authUser->roles->pluck('name')->contains('Админ') || $authUser->roles->pluck('name')->contains('Менеджер');
+        return in_array($authUser->role, ['admin', 'manager']);
     }
 
     public function view(User $authUser, User $user)
     {
-        return $authUser->id === $user->id || $authUser->roles->pluck('name')->contains('Админ') || $authUser->roles->pluck('name')->contains('Менеджер');
+        return in_array($authUser->role, ['admin', 'manager']);
     }
 
     public function update(User $authUser, User $user)
     {
-        return $authUser->id === $user->id || $authUser->roles->pluck('name')->contains('Админ') || $authUser->roles->pluck('name')->contains('Менеджер');
+        return in_array($authUser->role, ['admin', 'manager']);
     }
 
     public function delete(User $authUser, User $user)
     {
-        return $authUser->roles->pluck('name')->contains('Админ');
+        return in_array($authUser->role, ['admin', 'manager']);
     }
 }

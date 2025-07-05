@@ -11,21 +11,19 @@ class OrderItemPolicy
 {
     use HandlesAuthorization;
 
-    protected function roleId(User $user): int|null
+
+    public function viewAny(User $user)
     {
-        return $user->role_id;
+        if (in_array($user->role, ['admin', 'manager'])) {
+            return true;
+        }
+
+        return $user->assignedOrderItems()->exists();
     }
 
-    public function viewAny(User $user): bool
+    public function view(User $user, OrderItem $orderItem)
     {
-        return in_array($this->roleId($user), [1, 2]);
-    }
-
-    public function view(User $user, OrderItem $orderItem): bool
-    {
-        $roleId = $this->roleId($user);
-
-        if (in_array($roleId, [1, 2])) {
+        if (in_array($user->role, ['admin', 'manager'])) {
             return true;
         }
 
@@ -36,21 +34,21 @@ class OrderItemPolicy
 
     public function updateStatus(User $user, OrderItem $orderItem)
     {
-        return $orderItem->user_id->role === [1,2];
+        return in_array($user->role, ['admin', 'manager']);
     }
 
-    public function create(User $user): bool
+    public function create(User $user)
     {
-        return in_array($this->roleId($user), [1, 2]);
+        return in_array($user->role, ['admin', 'manager']);
     }
 
-    public function update(User $user, OrderItem $orderItem): bool
+    public function update(User $user, OrderItem $orderItem)
     {
-        return in_array($this->roleId($user), [1, 2]);
+        return in_array($user->role, ['admin', 'manager']);
     }
 
-    public function delete(User $user, OrderItem $orderItem): bool
+    public function delete(User $user, OrderItem $orderItem)
     {
-        return in_array($this->roleId($user), [1, 2]);
+        return in_array($user->role, ['admin', 'manager']);
     }
 }

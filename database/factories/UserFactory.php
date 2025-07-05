@@ -13,11 +13,9 @@ class UserFactory extends Factory
 {
     public function definition(): array
     {
-        $roleId = Role::inRandomOrder()->first();
-
         return [
             'name' => fake()->name(),
-            'role_id' => $roleId,
+            'role' => $this->faker->randomElement(['admin', 'manager', 'designer', 'print_operator', 'workshop_worker']),
             'phone' => fake()->phoneNumber(),
             'username' => fake()->userName(),
             'password' => Hash::make('password123'),

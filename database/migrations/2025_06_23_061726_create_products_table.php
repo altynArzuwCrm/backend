@@ -14,9 +14,8 @@ return new class extends Migration
         Schema::create('products', function (Blueprint $table) {
             $table->id();
             $table->string('name');
-            $table->foreignId('default_designer_id')->nullable()->constrained('users')->onDelete('set null');
+            $table->foreignId('designer_id')->nullable()->constrained('users')->nullOnDelete();
             $table->boolean('is_workshop_required')->default(false);
-            $table->enum('stage', ['design', 'print', 'workshop'])->nullable();
             $table->enum('workshop_type', ['montage', 'binding'])->nullable();
             $table->timestamps();
         });

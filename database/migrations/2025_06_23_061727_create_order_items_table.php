@@ -1,5 +1,6 @@
 <?php
 
+use App\Enums\ReasonStatus;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
@@ -15,11 +16,13 @@ return new class extends Migration
             $table->id();
             $table->foreignId('order_id')->constrained()->cascadeOnDelete();
             $table->foreignId('product_id')->constrained()->cascadeOnDelete();
-            $table->foreignId('reason_id')->nullable()->constrained()->nullOnDelete();
             $table->unsignedInteger('quantity')->default(1);
             $table->foreignId('manager_id')->nullable()->constrained('users')->nullOnDelete();
             $table->timestamp('deadline')->nullable();
-            $table->enum('status', ['pending', 'in_progress', 'completed', 'cancelled', 'under_review'])->default('pending');
+            $table->decimal('price', 10, 2)->nullable();
+            $table->enum('stage', ['draft', 'design', 'print', 'workshop', 'final', 'archived', 'completed', 'cancelled'])->default('draft');
+            $table->text('reason')->nullable();
+            $table->enum('reason_status', ReasonStatus::values())->nullable();
             $table->timestamps();
         });
     }

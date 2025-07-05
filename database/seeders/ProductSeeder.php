@@ -16,11 +16,13 @@ class ProductSeeder extends Seeder
         $products = [
             [
                 'name' => 'Визитная карточка',
+                'designer_id' => 3,
                 'is_workshop_required' => false,
                 'workshop_type' => null,
             ],
             [
                 'name' => 'Переплет книги',
+                'designer_id' => null,
                 'is_workshop_required' => true,
                 'workshop_type' => 'binding',
             ],

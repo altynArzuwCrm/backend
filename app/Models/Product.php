@@ -9,10 +9,24 @@ class Product extends Model
 {
     use HasFactory;
 
-    protected $fillable = ['name', 'default_designer_id', 'is_workshop_required', 'workshop_type'];
+    protected $fillable = [
+        'name',
+        'designer_id',
+        'is_workshop_required',
+        'workshop_type',
+    ];
 
-    public function defaultDesigner()
+    protected $casts = [
+        'is_workshop_required' => 'boolean',
+    ];
+
+    public function designer()
     {
-        return $this->belongsTo(User::class, 'default_designer_id');
+        return $this->belongsTo(User::class, 'designer_id');
+    }
+
+    public function orders()
+    {
+        return $this->hasMany(Order::class);
     }
 }

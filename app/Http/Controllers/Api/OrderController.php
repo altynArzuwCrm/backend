@@ -4,8 +4,10 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Order;
-use Illuminate\Support\Facades\Gate;
+use App\Models\OrderAssignment;
+use App\Models\OrderStatusLog;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Gate;
 
 class OrderController extends Controller
 {
@@ -14,12 +16,27 @@ class OrderController extends Controller
         if (Gate::denies('viewAny', Order::class)) {
             abort(403, 'Доступ запрещён');
         }
+        $user = auth()->user();
 
-        $orders = Order::with('items')
-            ->orderByDesc('created_at')
-            ->paginate(20);
+        $query = Order::with(['project', 'product', 'manager']);
 
-        return response()->json($orders);
+        if (!in_array($user->role, ['admin', 'manager'])) {
+            $assignedOrderIds = OrderAssignment::query()
+                ->where('user_id', $user->id)
+                ->pluck('order_id');
+
+            $query->whereIn('id', $assignedOrderIds);
+        }
+
+        if ($request->project_id) {
+            $query->where('project_id', $request->project_id);
+        }
+
+        if ($request->filled('stage')) {
+            $query->where('stage', $request->stage);
+        }
+
+        return response()->json($query->paginate(20));
     }
 
     public function show(Order $order)
@@ -28,7 +45,7 @@ class OrderController extends Controller
             abort(403, 'Доступ запрещён');
         }
 
-        $order->load('items');
+        $order->load(['project', 'product', 'manager']);
 
         return response()->json($order);
     }
@@ -40,15 +57,13 @@ class OrderController extends Controller
         }
 
         $data = $request->validate([
-            'title' => 'required|string|max:255',
-            'client_id' => 'required|exists:clients,id',
-            'deadline' => 'nullable|date',
+            'project_id' => ['required', 'exists:projects,id'],
+            'product_id' => ['required', 'exists:products,id'],
+            'quantity' => ['required', 'integer', 'min:1'],
+            'manager_id' => ['nullable', 'exists:users,id'],
+            'deadline' => ['nullable', 'date'],
             'price' => 'nullable|numeric|min:0',
-            'payment_amount' => 'nullable|numeric|min:0',
         ]);
-
-        $data['stage'] = 'draft';
-        $data['status'] = null;
 
         $order = Order::create($data);
 
@@ -62,16 +77,58 @@ class OrderController extends Controller
         }
 
         $data = $request->validate([
-            'title' => 'sometimes|string|max:255',
-            'client_id' => 'sometimes|exists:clients,id',
-            'deadline' => 'nullable|date',
+            'quantity' => ['sometimes', 'integer', 'min:1'],
+            'manager_id' => ['nullable', 'exists:users,id'],
+            'deadline' => ['nullable', 'date'],
             'price' => 'nullable|numeric|min:0',
-            'payment_amount' => 'nullable|numeric|min:0',
         ]);
 
         $order->update($data);
 
         return response()->json($order);
+    }
+
+    public function updateStage(Request $request, Order $order)
+    {
+        if (Gate::denies('updateStatus', $order)) {
+            abort(403, 'Доступ запрещён');
+        }
+
+        $request->validate([
+            'stage' => 'required|in:draft,design,print,workshop,final,archived,completed,cancelled'
+        ]);
+
+        $oldStatus = $order->stage;
+        $order->stage = $request->stage;
+
+        if ($request->stage == 'cancelled') {
+            $request->validate([
+                'reason' => 'required|string',
+                'reason_status' => 'required|in:refused,not_responding,defective_product'
+            ]);
+
+            $order->reason = $request->reason;
+            $order->reason_status = $request->reason_status;
+        } else {
+            $order->reason = null;
+            $order->reason_status = null;
+        }
+
+        $order->save();
+
+        OrderStatusLog::create([
+            'order_id' => $order->id,
+            'from_status' => $oldStatus,
+            'to_status' => $order->stage,
+            'user_id' => auth()->id(),
+            'changed_at' => now(),
+        ]);
+
+        return response()->json([
+            'message' => 'Статус обновлён',
+            'stage' => $order->stage,
+            'order_id' => $order->id
+        ]);
     }
 
     public function destroy(Order $order)
@@ -85,72 +142,9 @@ class OrderController extends Controller
         return response()->json(['message' => 'Заказ удалён']);
     }
 
-    public function updateStatus(Request $request, Order $order)
+    public function statusLogs(Order $order)
     {
-        if (Gate::denies('updateStatus', $order)) {
-            abort(403, 'Доступ запрещён');
-        }
-
-        $request->validate([
-            'status' => 'required|in:draft,design,print,workshop,final,archived',
-        ]);
-
-        $order->status = $request->status;
-        $order->save();
-
-        return response()->json([
-            'message' => 'Статус обновлён',
-            'status' => $order->status,
-            'assignment_id' => $order->id
-        ]);
-    }
-
-    public function markAsCancelled(Order $order)
-    {
-        if (Gate::denies('update', $order)) {
-            abort(403, 'Доступ запрещён');
-        }
-
-        $this->authorize('update', $order);
-
-        $order->update(['status' => 'cancelled']);
-
-        return response()->json(['message' => 'Статус заказа установлен как "cancelled"']);
-    }
-
-    public function markAsCompleted(Order $order)
-    {
-        if (Gate::denies('update', $order)) {
-            abort(403, 'Доступ запрещён');
-        }
-
-        $this->authorize('update', $order);
-
-        $order->update(['status' => 'completed']);
-
-        return response()->json(['message' => 'Статус заказа установлен как "completed"']);
-    }
-
-    public function cancelOrder(Request $request, Order $order)
-    {
-        if (Gate::denies('update', $order)) {
-            abort(403, 'Доступ запрещён');
-        }
-        $request->validate([
-            'reasons' => 'array',
-            'reasons.*.order_item_id' => 'required|exists:order_items,id',
-            'reasons.*.reason_id' => 'required|exists:reasons,id',
-        ]);
-
-        $order->update(['status' => 'cancelled']);
-
-        foreach ($request->input('reasons') as $reasonData) {
-            $item = $order->items()->find($reasonData['order_item_id']);
-            if ($item) {
-                $item->update(['reason_id' => $reasonData['reason_id']]);
-            }
-        }
-
-        return response()->json(['message' => 'Order cancelled with reasons']);
+        $logs = $order->statusLogs()->with('user')->orderBy('changed_at', 'desc')->get();
+        return response()->json($logs);
     }
 }

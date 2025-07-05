@@ -7,48 +7,99 @@ use App\Http\Resources\UserResource;
 use App\Models\OrderItem;
 use App\Models\User;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Storage;
 
 class UserController extends Controller
 {
-    public function index()
+    private function checkUserManagementAccess()
     {
-        if (Gate::denies('viewAny', User::class)) {
-            abort(403, 'Доступ запрещён');
+        $user = Auth::user();
+        if (!$user || !in_array($user->role, ['admin', 'manager'])) {
+            abort(403, 'Доступ запрещён. Только администраторы и менеджеры могут управлять пользователями.');
         }
-        $users = User::with('role')->paginate(20);
+    }
+
+    public function index(Request $request)
+    {
+        $this->checkUserManagementAccess();
+
+        $query = User::query();
+
+        if ($request->filled('role')) {
+            $query->where('role', $request->role);
+        }
+
+        if ($request->filled('search')) {
+            $query->where('name', 'like', '%' . $request->search . '%');
+        }
+
+        $sortBy = $request->get('sort_by', 'name');
+        $sortOrder = $request->get('sort_order', 'asc');
+
+        if (in_array($sortBy, ['name', 'role', 'created_at'])) {
+            $query->orderBy($sortBy, $sortOrder);
+        }
+
+        $perPage = $request->get('per_page', 10);
+        $users = $query->paginate($perPage);
+
+        return response()->json([
+            'data' => UserResource::collection($users->items()),
+            'pagination' => [
+                'current_page' => $users->currentPage(),
+                'last_page' => $users->lastPage(),
+                'per_page' => $users->perPage(),
+                'total' => $users->total(),
+                'from' => $users->firstItem(),
+                'to' => $users->lastItem(),
+                'has_more_pages' => $users->hasMorePages(),
+                'has_previous_page' => $users->previousPageUrl() !== null,
+                'has_next_page' => $users->nextPageUrl() !== null,
+            ]
+        ]);
+    }
+
+    public function getByRole(Request $request, string $role)
+    {
+        $this->checkUserManagementAccess();
+
+        $allowedRoles = ['admin', 'manager', 'designer', 'print_operator', 'workshop_worker'];
+
+        if (!in_array($role, $allowedRoles)) {
+            abort(400, 'Недопустимая роль');
+        }
+
+        $users = User::where('role', $role)->get();
 
         return UserResource::collection($users);
     }
 
     public function show(User $user)
     {
-        if (Gate::denies('view', $user)) {
-            abort(403, 'Доступ запрещён');
-        }
-        $this->authorize('view', $user);
+        $this->checkUserManagementAccess();
 
-        return new UserResource($user->load('role'));
+        return new UserResource($user);
     }
 
     public function store(Request $request)
     {
-        if (Gate::denies('create', User::class)) {
-            abort(403, 'Доступ запрещён');
-        }
+        $this->checkUserManagementAccess();
 
         $data = $request->validate([
             'name' => 'required|string',
-            'image' => 'nullable|image|max:2048',
+            'image' => 'nullable|image|max:5120',
             'username' => 'required|string|unique:users,username',
             'phone' => 'nullable|string',
             'password' => 'required|string|min:6',
-            'role_id' => 'required|exists:roles,id',
+            'role' => 'required|in:admin,manager,designer,print_operator,workshop_worker',
         ]);
 
+        $imagePath = null;
         if ($request->hasFile('image')) {
-            $data['image'] = $request->file('image')->store('images', 'public');
+            $imagePath = $request->file('image')->store('users', 'public');
         }
 
         $user = User::create([
@@ -56,29 +107,32 @@ class UserController extends Controller
             'username' => $data['username'],
             'phone' => $data['phone'] ?? null,
             'password' => Hash::make($data['password']),
-            'image' => $data['image'] ?? null,
-            'role_id' => $data['role_id'],
+            'image' => $imagePath,
+            'role' => $data['role'],
         ]);
 
-        return new UserResource($user->load('role'));
+        return new UserResource($user);
     }
 
     public function update(Request $request, User $user)
     {
-        if (Gate::denies('update', $user)) {
-            abort(403, 'Доступ запрещён');
-        }
+        $this->checkUserManagementAccess();
+
         $data = $request->validate([
             'name' => 'sometimes|string',
             'phone' => 'nullable|string',
             'password' => 'nullable|string|min:6',
-            'image' => 'nullable|image|max:2048',
-            'role_id' => 'sometimes|required|exists:roles,id',
+            'image' => 'nullable|image|max:5120',
+            'role' => 'sometimes|required|in:admin,manager,designer,print_operator,workshop_worker',
         ]);
 
         if ($request->hasFile('image')) {
-            $imagePath = $request->file('image')->store('images', 'public');
-            $data['image'] = $imagePath;
+            if ($user->image && Storage::disk('public')->exists($user->image)) {
+                Storage::disk('public')->delete($user->image);
+            }
+
+            $imagePath = $request->file('image')->store('users', 'public');
+            $user->image = $imagePath;
         }
 
         if (isset($data['name'])) {
@@ -90,18 +144,19 @@ class UserController extends Controller
         if (!empty($data['password'])) {
             $user->password = Hash::make($data['password']);
         }
-        if (isset($data['role_id'])) {
-            $user->role_id = $data['role_id'];
+        if (isset($data['role'])) {
+            $user->role = $data['role'];
         }
         $user->save();
 
-        return new UserResource($user->load('role'));
+        return new UserResource($user);
     }
 
     public function destroy(User $user)
     {
-        if (Gate::denies('delete', $user)) {
-            abort(403, 'Доступ запрещён');
+        $this->checkUserManagementAccess();
+        if ($user->image && Storage::disk('public')->exists($user->image)) {
+            Storage::disk('public')->delete($user->image);
         }
 
         $user->delete();
