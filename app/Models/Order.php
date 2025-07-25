@@ -34,6 +34,25 @@ class Order extends Model
         'is_archived' => 'boolean'
     ];
 
+    protected static function booted()
+    {
+        static::created(function ($order) {
+            if ($order->project) {
+                $order->project->recalculateTotalPrice();
+            }
+        });
+        static::updated(function ($order) {
+            if ($order->project) {
+                $order->project->recalculateTotalPrice();
+            }
+        });
+        static::deleted(function ($order) {
+            if ($order->project) {
+                $order->project->recalculateTotalPrice();
+            }
+        });
+    }
+
     public function project()
     {
         return $this->belongsTo(Project::class)->withDefault([

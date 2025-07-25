@@ -52,8 +52,13 @@ class AuditLogController extends Controller
             $query->where('auditable_id', $request->auditable_id);
         }
 
+        $allowedPerPage = [10, 20, 50, 100, 200, 500];
+        $perPage = (int) $request->get('per_page', 30);
+        if (!in_array($perPage, $allowedPerPage)) {
+            $perPage = 30;
+        }
         $logs = $query->orderBy('created_at', 'desc')
-            ->paginate($request->get('per_page', 30));
+            ->paginate($perPage);
 
         return response()->json([
             'success' => true,

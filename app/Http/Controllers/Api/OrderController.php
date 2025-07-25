@@ -46,6 +46,14 @@ class OrderController extends Controller
             $query->where('is_archived', $isArchived);
         }
 
+        // Фильтрация по статусу назначения (ожидание, в работе)
+        if ($request->filled('assignment_status')) {
+            $assignmentStatus = $request->assignment_status;
+            $query->whereHas('assignments', function ($q) use ($assignmentStatus) {
+                $q->where('status', $assignmentStatus);
+            });
+        }
+
         // Поиск по ID заказа, названию продукта и имени клиента
         if ($request->filled('search')) {
             $search = $request->search;
@@ -66,7 +74,11 @@ class OrderController extends Controller
         $query->orderBy($sortBy, $sortOrder);
 
         // --- Поддержка per_page ---
-        $perPage = $request->input('per_page', 30);
+        $allowedPerPage = [10, 20, 50, 100, 200, 500];
+        $perPage = (int) $request->input('per_page', 30);
+        if (!in_array($perPage, $allowedPerPage)) {
+            $perPage = 30;
+        }
         return response()->json($query->paginate($perPage));
     }
 
@@ -150,7 +162,6 @@ class OrderController extends Controller
         $newStage = $request->stage;
         $product = $order->product;
 
-        // --- Назначение сотрудников для этапа (поддержка множественных назначений) ---
         $roleMap = [
             'design' => 'designer',
             'print' => 'print_operator',

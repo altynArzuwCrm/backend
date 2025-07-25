@@ -52,7 +52,12 @@ class ProjectController extends Controller
             $query->whereIn('id', $projectIds);
         }
 
-        $projects = $query->paginate(30);
+        $allowedPerPage = [10, 20, 50, 100, 200, 500];
+        $perPage = (int) $request->get('per_page', 30);
+        if (!in_array($perPage, $allowedPerPage)) {
+            $perPage = 30;
+        }
+        $projects = $query->paginate($perPage);
 
         return response()->json($projects);
     }

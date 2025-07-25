@@ -11,6 +11,7 @@ use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Log;
 
 class UserController extends Controller
 {
@@ -123,6 +124,12 @@ class UserController extends Controller
 
     public function update(Request $request, User $user)
     {
+        Log::info('REQUEST DATA:', $request->all());
+        Log::info('HAS FILE:', ['hasFile' => $request->hasFile('image')]);
+        Log::info('ALL FILES:', $request->allFiles());
+        Log::info('ALL:', $request->all());
+        Log::info('USER BEFORE:', $user->toArray());
+
         $this->checkUserManagementAccess();
 
         $data = $request->validate([
@@ -162,11 +169,14 @@ class UserController extends Controller
         }
         $user->save();
 
+        $user->refresh();
+        Log::info('USER AFTER:', $user->toArray());
+
         if (isset($data['roles'])) {
             $user->roles()->sync($data['roles']);
         }
 
-        return new UserResource($user->fresh('roles'));
+        return response()->json($user);
     }
 
     public function destroy(User $user)

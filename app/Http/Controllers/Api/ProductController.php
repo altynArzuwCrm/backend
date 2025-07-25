@@ -20,7 +20,11 @@ class ProductController extends Controller
             ], 403);
         }
 
-        $perPage = $request->get('per_page', 30);
+        $allowedPerPage = [10, 20, 50, 100, 200, 500];
+        $perPage = (int) $request->get('per_page', 30);
+        if (!in_array($perPage, $allowedPerPage)) {
+            $perPage = 30;
+        }
         $query = Product::with(['assignments.user', 'orders.assignments']);
 
         if ($request->has('search') && $request->search) {
