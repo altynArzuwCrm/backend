@@ -9,6 +9,8 @@ use App\Models\OrderAssignment;
 use App\Models\Product;
 use App\Models\Project;
 use App\Models\User;
+use App\Models\AuditLog;
+use App\Policies\AuditLogPolicy;
 use App\Policies\ClientPolicy;
 use App\Policies\CommentPolicy;
 use App\Policies\OrderAssignmentPolicy;
@@ -28,5 +30,6 @@ class AuthServiceProvider extends ServiceProvider
         Comment::class => CommentPolicy::class,
         Product::class => ProductPolicy::class,
         OrderAssignment::class => OrderAssignmentPolicy::class,
+        AuditLog::class => AuditLogPolicy::class,
     ];
 }

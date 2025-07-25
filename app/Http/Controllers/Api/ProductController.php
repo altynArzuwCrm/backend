@@ -5,7 +5,10 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Product;
 use Illuminate\Http\Request;
+use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Facades\Cache;
+use App\Http\Resources\ProductResource;
 
 class ProductController extends Controller
 {
@@ -17,18 +20,56 @@ class ProductController extends Controller
             ], 403);
         }
 
-        $perPage = $request->get('per_page', 10);
-        $query = Product::with('designer');
+        $perPage = $request->get('per_page', 30);
+        $query = Product::with(['assignments.user', 'orders.assignments']);
 
         if ($request->has('search') && $request->search) {
-            $query->where('name', 'like', '%' . $request->search . '%');
+            $search = $request->search;
+            $query->where(function ($q) use ($search) {
+                $q->where('name', 'like', '%' . $search . '%')
+                    ->orWhere('id', 'like', '%' . $search . '%');
+            });
         }
 
         $sortBy = $request->get('sort_by', 'id');
         $sortOrder = $request->get('sort_order', 'desc');
-        $query->orderBy($sortBy, $sortOrder);
-
-        return $query->paginate($perPage);
+        if ($sortBy === 'name') {
+            // Сортируем по name: сначала кириллица, потом латиница, с поддержкой asc/desc
+            $products = $query->get();
+            $products = $products->sort(function ($a, $b) use ($sortOrder) {
+                $isCyrA = preg_match('/^[А-Яа-яЁё]/u', $a->name);
+                $isCyrB = preg_match('/^[А-Яа-яЁё]/u', $b->name);
+                if ($isCyrA && !$isCyrB) return $sortOrder === 'asc' ? -1 : 1;
+                if (!$isCyrA && $isCyrB) return $sortOrder === 'asc' ? 1 : -1;
+                // Если оба на кириллице или оба на латинице — обычная сортировка
+                return $sortOrder === 'asc'
+                    ? mb_strtolower($a->name) <=> mb_strtolower($b->name)
+                    : mb_strtolower($b->name) <=> mb_strtolower($a->name);
+            });
+            // Пагинация вручную
+            $page = $request->get('page', 1);
+            $perPage = $request->get('per_page', 30);
+            $paged = new \Illuminate\Pagination\LengthAwarePaginator(
+                $products->forPage($page, $perPage)->values(),
+                $products->count(),
+                $perPage,
+                $page,
+                ['path' => $request->url(), 'query' => $request->query()]
+            );
+            $paged->getCollection()->transform(function ($product) {
+                return \Illuminate\Support\Facades\Gate::allows('view', $product) ? $product : null;
+            });
+            $paged->setCollection($paged->getCollection()->filter()->values());
+            return ProductResource::collection($paged);
+        } else {
+            $query->orderBy($sortBy, $sortOrder);
+            $products = $query->paginate($perPage);
+            $products->getCollection()->transform(function ($product) {
+                return \Illuminate\Support\Facades\Gate::allows('view', $product) ? $product : null;
+            });
+            $products->setCollection($products->getCollection()->filter()->values());
+            return ProductResource::collection($products);
+        }
     }
 
     public function show(Product $product)
@@ -39,7 +80,8 @@ class ProductController extends Controller
             ], 403);
         }
 
-        return $product->load('designer');
+        $product->load(['assignments.user', 'orders.assignments']);
+        return new ProductResource($product);
     }
 
     public function store(Request $request)
@@ -52,14 +94,27 @@ class ProductController extends Controller
 
         $data = $request->validate([
             'name' => 'required|string|max:255',
-            'designer_id' => 'nullable|exists:users,id',
-            'is_workshop_required' => 'boolean',
-            'workshop_type' => 'nullable|in:montage,binding',
+            'has_design_stage' => 'boolean',
+            'has_print_stage' => 'boolean',
+            'has_engraving_stage' => 'boolean',
+            'has_workshop_stage' => 'boolean',
         ]);
 
         $product = Product::create($data);
+        $product->load(['assignments.user', 'orders.assignments']);
+        return response()->json(['data' => new ProductResource($product)], 201);
+    }
 
-        return response()->json($product->load('designer'), 201);
+    public function allProducts()
+    {
+        if (Gate::denies('allProducts', Product::class)) {
+            abort(403, 'Доступ запрещён');
+        }
+
+        $products = Cache::remember('all_products', 60, function () {
+            return Product::with(['assignments.user', 'orders.assignments'])->orderBy('id')->get();
+        });
+        return ProductResource::collection($products);
     }
 
     public function update(Request $request, Product $product)
@@ -72,14 +127,15 @@ class ProductController extends Controller
 
         $data = $request->validate([
             'name' => 'sometimes|string|max:255',
-            'designer_id' => 'nullable|exists:users,id',
-            'is_workshop_required' => 'sometimes|boolean',
-            'workshop_type' => 'nullable|in:montage,binding',
+            'has_design_stage' => 'boolean',
+            'has_print_stage' => 'boolean',
+            'has_engraving_stage' => 'boolean',
+            'has_workshop_stage' => 'boolean',
         ]);
 
         $product->update($data);
-
-        return response()->json($product->load('designer'));
+        $product->load(['assignments.user', 'orders.assignments']);
+        return new ProductResource($product);
     }
 
     public function destroy(Product $product)

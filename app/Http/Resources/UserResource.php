@@ -25,10 +25,15 @@ class UserResource extends JsonResource
             'name'       => $this->name,
             'username'   => $this->username,
             'phone'      => $this->phone,
-            'role'       => $this->role,
             'image'      => $this->image,
-            'image_url'  => $imageUrl,
-            'roles'      => $this->whenLoaded('roles'),
+            'is_active'  => $this->is_active,
+            'roles'      => $this->roles->map(function ($role) {
+                return [
+                    'id' => $role->id,
+                    'name' => $role->name,
+                    'display_name' => $role->display_name,
+                ];
+            }),
             'created_at' => $this->created_at,
             'updated_at' => $this->updated_at,
         ];

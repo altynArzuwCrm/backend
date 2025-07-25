@@ -11,7 +11,6 @@ class Project extends Model
 
     protected $fillable = [
         'title',
-        'client_id',
         'deadline',
         'total_price',
         'payment_amount'
@@ -23,11 +22,6 @@ class Project extends Model
         'payment_amount' => 'decimal:2'
     ];
 
-    public function client()
-    {
-        return $this->belongsTo(Client::class);
-    }
-
     public function orders()
     {
         return $this->hasMany(Order::class);
@@ -35,6 +29,6 @@ class Project extends Model
 
     public function comments()
     {
-        return $this->morphMany(Comment::class, 'commentable');
+        return $this->hasMany(Comment::class);
     }
 } 

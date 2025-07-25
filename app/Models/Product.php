@@ -11,22 +11,91 @@ class Product extends Model
 
     protected $fillable = [
         'name',
-        'designer_id',
-        'is_workshop_required',
-        'workshop_type',
+        'has_design_stage',
+        'has_print_stage',
+        'has_engraving_stage',
+        'has_workshop_stage',
     ];
 
     protected $casts = [
-        'is_workshop_required' => 'boolean',
+        'has_design_stage' => 'boolean',
+        'has_print_stage' => 'boolean',
+        'has_engraving_stage' => 'boolean',
+        'has_workshop_stage' => 'boolean',
     ];
 
-    public function designer()
-    {
-        return $this->belongsTo(User::class, 'designer_id');
-    }
+    // Удалены методы designer(), printOperator(), workshopWorker()
 
     public function orders()
     {
         return $this->hasMany(Order::class);
+    }
+
+    // Отношения для множественных назначений
+    public function assignments()
+    {
+        return $this->hasMany(ProductAssignment::class);
+    }
+
+    public function designerAssignments()
+    {
+        return $this->hasMany(ProductAssignment::class)->where('role_type', 'designer');
+    }
+
+    public function printOperatorAssignments()
+    {
+        return $this->hasMany(ProductAssignment::class)->where('role_type', 'print_operator');
+    }
+
+    public function workshopWorkerAssignments()
+    {
+        return $this->hasMany(ProductAssignment::class)->where('role_type', 'workshop_worker');
+    }
+
+    public function engravingOperatorAssignments()
+    {
+        return $this->hasMany(ProductAssignment::class)->where('role_type', 'engraving_operator');
+    }
+
+    // Методы для получения назначенных пользователей
+    public function getDesigners()
+    {
+        return $this->designerAssignments()
+            ->where('is_active', true)
+            ->with('user')
+            ->get()
+            ->pluck('user');
+    }
+
+    public function getPrintOperators()
+    {
+        return $this->printOperatorAssignments()
+            ->where('is_active', true)
+            ->with('user')
+            ->get()
+            ->pluck('user');
+    }
+
+    public function getWorkshopWorkers()
+    {
+        return $this->workshopWorkerAssignments()
+            ->where('is_active', true)
+            ->with('user')
+            ->get()
+            ->pluck('user');
+    }
+
+    public function getEngravingOperators()
+    {
+        return $this->engravingOperatorAssignments()
+            ->where('is_active', true)
+            ->with('user')
+            ->get()
+            ->pluck('user');
+    }
+
+    public function getNextAvailableUser($roleType, $excludeUserIds = [])
+    {
+        return ProductAssignment::getNextAvailableUser($this->id, $roleType, $excludeUserIds);
     }
 }

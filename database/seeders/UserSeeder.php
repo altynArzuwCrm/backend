@@ -18,29 +18,85 @@ class UserSeeder extends Seeder
         $users = [
             [
                 'name' => 'Aylana',
-                'username' => 'lana06',
-                'image' => null,
-                'password' => Hash::make('password123'),
-                'role' => 'admin',
+                'username' => 'aylana',
+                'image' => 'users/admin.jpg',
+                'password' => Hash::make('password'),
+                'is_active' => true,
             ],
             [
                 'name' => 'Test',
                 'username' => 'test00',
                 'image' => 'users/manager.jpg',
-                'password' => Hash::make('password123'),
-                'role' => 'workshop_worker',
+                'password' => Hash::make('password'),
+                'is_active' => true,
             ],
             [
-                'name' => 'Test1',
-                'username' => 'test01',
+                'name' => 'Вика',
+                'username' => 'vika',
                 'image' => null,
                 'password' => Hash::make('password123'),
-                'role' => 'designer',
-            ]
+                'is_active' => true,
+            ],
+            [
+                'name' => 'Диана',
+                'username' => 'diana',
+                'image' => null,
+                'password' => Hash::make('password123'),
+                'is_active' => true,
+            ],
+            [
+                'name' => 'Илья',
+                'username' => 'ilya',
+                'image' => null,
+                'password' => Hash::make('password123'),
+                'is_active' => true,
+            ],
+            [
+                'name' => 'Максим',
+                'username' => 'maxim',
+                'image' => null,
+                'password' => Hash::make('password123'),
+                'is_active' => true,
+            ],
+            [
+                'name' => 'Ширали',
+                'username' => 'shirali',
+                'image' => null,
+                'password' => Hash::make('password123'),
+                'is_active' => true,
+            ],
+            [
+                'name' => 'Куват',
+                'username' => 'kuwat',
+                'image' => null,
+                'password' => Hash::make('password123'),
+                'is_active' => true,
+            ],
+            [
+                'name' => 'Ата ага',
+                'username' => 'ataaga',
+                'image' => null,
+                'password' => Hash::make('password123'),
+                'is_active' => true,
+            ],
+            [
+                'name' => 'Николай',
+                'username' => 'nikolay',
+                'image' => null,
+                'password' => Hash::make('password123'),
+                'is_active' => true,
+            ],
+            [
+                'name' => 'Джейхун',
+                'username' => 'djaykhun',
+                'image' => null,
+                'password' => Hash::make('password123'),
+                'is_active' => true,
+            ],
         ];
 
         foreach ($users as $userData) {
-            User::create($userData);
+            User::firstOrCreate(['username' => $userData['username']], $userData);
         }
     }
 }

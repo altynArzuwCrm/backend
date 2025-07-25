@@ -5,14 +5,48 @@ namespace App\Models;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Laravel\Sanctum\HasApiTokens;
+use Illuminate\Notifications\Notifiable;
 
 class User extends Authenticatable
 {
-    use HasFactory, HasApiTokens;
+    use HasFactory, HasApiTokens, Notifiable;
 
-    protected $fillable = ['name', 'role', 'phone', 'username', 'password'];
+    protected $fillable = ['name', 'phone', 'username', 'password', 'is_active'];
+
+    public function roles()
+    {
+        return $this->belongsToMany(Role::class, 'user_roles')
+            ->withTimestamps();
+    }
+
+    public function hasRole($roleName)
+    {
+        return $this->roles()->where('name', $roleName)->exists();
+    }
+
+    public function hasAnyRole($roleNames)
+    {
+        if (is_string($roleNames)) {
+            $roleNames = [$roleNames];
+        }
+        return $this->roles()->whereIn('name', $roleNames)->exists();
+    }
+
+    public function hasAllRoles($roleNames)
+    {
+        if (is_string($roleNames)) {
+            $roleNames = [$roleNames];
+        }
+        $userRoleCount = $this->roles()->whereIn('name', $roleNames)->count();
+        return $userRoleCount === count($roleNames);
+    }
 
     public function assignedOrders()
+    {
+        return $this->hasMany(OrderAssignment::class, 'user_id');
+    }
+
+    public function assignments()
     {
         return $this->hasMany(OrderAssignment::class, 'user_id');
     }

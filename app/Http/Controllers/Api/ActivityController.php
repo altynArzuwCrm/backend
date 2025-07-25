@@ -6,10 +6,10 @@ use App\Http\Controllers\Controller;
 use App\Models\AuditLog;
 use App\Models\User;
 use App\Models\Order;
-use App\Models\OrderItem;
 use App\Models\Client;
 use Illuminate\Http\Request;
 use Carbon\Carbon;
+use Illuminate\Support\Facades\Log;
 
 class ActivityController extends Controller
 {
@@ -40,21 +40,42 @@ class ActivityController extends Controller
         
         // Новые заказы
         $newOrders = Order::where('created_at', '>=', Carbon::now()->subDays(7))
-            ->with('project')
+            ->with(['project', 'client'])
             ->orderBy('created_at', 'desc')
             ->limit(10)
             ->get()
             ->map(function ($order) {
+                // Безопасное получение имени клиента
+                $clientName = 'Неизвестный клиент';
+                $amount = 0;
+                
+                if ($order->client) {
+                    $clientName = $order->client->name;
+                } elseif ($order->project && $order->project->client) {
+                    $clientName = $order->project->client->name;
+                } else {
+                    // Логируем случаи с отсутствующими клиентами
+                    Log::warning('Order without client', [
+                        'order_id' => $order->id,
+                        'project_id' => $order->project_id,
+                        'client_id' => $order->client_id
+                    ]);
+                }
+                
+                if ($order->project) {
+                    $amount = $order->project->total_price ?? 0;
+                }
+                
                 return [
                     'id' => 'order_' . $order->id,
                     'type' => 'order_created',
                     'title' => 'Новый заказ',
-                    'description' => "Заказ '{$order->title}' от клиента {$order->project->client->name}",
-                    'user' => $order->project->client->name,
+                    'description' => "Заказ от клиента {$clientName}",
+                    'user' => $clientName,
                     'timestamp' => $order->created_at,
                     'icon' => 'shopping-cart',
                     'color' => 'green',
-                    'amount' => $order->project->total_price
+                    'amount' => $amount
                 ];
             });
         
@@ -84,11 +105,24 @@ class ActivityController extends Controller
             ->limit(10)
             ->get()
             ->map(function ($log) {
+                // Безопасное получение данных заказа
+                $orderTitle = 'Неизвестный заказ';
+                if ($log->order) {
+                    $orderTitle = $log->order->title ?? "Заказ #{$log->order->id}";
+                } else {
+                    // Логируем случаи с отсутствующими заказами
+                    Log::warning('AuditLog without order', [
+                        'audit_log_id' => $log->id,
+                        'order_id' => $log->order_id,
+                        'change_type' => $log->change_type
+                    ]);
+                }
+                
                 return [
                     'id' => 'status_' . $log->id,
                     'type' => 'status_change',
                     'title' => 'Изменение статуса',
-                    'description' => "Статус заказа '{$log->order->title}' изменен с '{$log->old_value}' на '{$log->new_value}'",
+                    'description' => "Статус заказа '{$orderTitle}' изменен с '{$log->old_value}' на '{$log->new_value}'",
                     'user' => $log->user->name ?? 'Система',
                     'timestamp' => $log->created_at,
                     'icon' => 'refresh-cw',
@@ -127,6 +161,7 @@ class ActivityController extends Controller
                 return [
                     'id' => 'user_' . $user->id,
                     'title' => "Новый пользователь: {$user->name}",
+                    'timestamp' => $user->created_at,
                     'time' => $user->created_at->diffForHumans(),
                     'icon' => 'UserIcon',
                     'iconBg' => 'bg-blue-500 bg-opacity-20'
@@ -134,14 +169,18 @@ class ActivityController extends Controller
             });
         
         // Последние 5 новых заказов
-        $recentOrders = Order::with('project')
+        $recentOrders = Order::with(['project', 'client', 'product'])
             ->orderBy('created_at', 'desc')
             ->limit(5)
             ->get()
             ->map(function ($order) {
+                // Безопасное получение названия заказа
+                $orderTitle = $order->display_name ?? "Заказ #{$order->id}";
+                
                 return [
                     'id' => 'order_' . $order->id,
-                    'title' => "Новый заказ: {$order->title}",
+                    'title' => "Новый заказ: {$orderTitle}",
+                    'timestamp' => $order->created_at,
                     'time' => $order->created_at->diffForHumans(),
                     'icon' => 'ShoppingCartIcon',
                     'iconBg' => 'bg-green-500 bg-opacity-20'
@@ -156,6 +195,7 @@ class ActivityController extends Controller
                 return [
                     'id' => 'client_' . $client->id,
                     'title' => "Новый клиент: {$client->name}",
+                    'timestamp' => $client->created_at,
                     'time' => $client->created_at->diffForHumans(),
                     'icon' => 'UserGroupIcon',
                     'iconBg' => 'bg-purple-500 bg-opacity-20'
@@ -163,7 +203,12 @@ class ActivityController extends Controller
             });
         
         // События из audit_logs
-        $auditEvents = AuditLog::orderBy('created_at', 'desc')
+        $auditEvents = AuditLog::with(['auditable' => function ($query) {
+            if ($query->getModel() instanceof \App\Models\Order) {
+                $query->with(['product', 'client']);
+            }
+        }, 'user'])
+            ->orderBy('created_at', 'desc')
             ->limit(10)
             ->get()
             ->map(function ($log) {
@@ -171,25 +216,42 @@ class ActivityController extends Controller
                 $icon = 'DocumentIcon';
                 $iconBg = 'bg-orange-500 bg-opacity-20';
                 
-                switch ($log->change_type) {
-                    case 'status_change':
-                        $title = "Статус заказа #{$log->order_id} изменён с {$log->old_value} на {$log->new_value}";
-                        $icon = 'RefreshIcon';
-                        $iconBg = 'bg-yellow-500 bg-opacity-20';
-                        break;
-                    case 'price_change':
-                        $title = "Цена заказа #{$log->order_id} изменена с {$log->old_value} на {$log->new_value}";
-                        $icon = 'CurrencyDollarIcon';
+                // Получаем название сущности
+                $entityName = 'неизвестной сущности';
+                if ($log->auditable) {
+                    if ($log->auditable_type === 'App\Models\Order') {
+                        $entityName = $log->auditable->display_name ?? "Заказ #{$log->auditable->id}";
+                    } else {
+                        $entityName = $log->auditable->name ?? $log->auditable->id;
+                    }
+                }
+                
+                // Определяем действие
+                switch ($log->action) {
+                    case 'created':
+                        $title = "Создан {$log->model_name}: {$entityName}";
+                        $icon = 'PlusIcon';
                         $iconBg = 'bg-green-500 bg-opacity-20';
                         break;
+                    case 'updated':
+                        $title = "Обновлен {$log->model_name}: {$entityName}";
+                        $icon = 'PencilIcon';
+                        $iconBg = 'bg-blue-500 bg-opacity-20';
+                        break;
+                    case 'deleted':
+                        $title = "Удален {$log->model_name}: {$entityName}";
+                        $icon = 'TrashIcon';
+                        $iconBg = 'bg-red-500 bg-opacity-20';
+                        break;
                     default:
-                        $title = "Изменение в заказе #{$log->order_id}: {$log->field_name}";
+                        $title = "Действие {$log->action} с {$log->model_name}: {$entityName}";
                         break;
                 }
                 
                 return [
                     'id' => 'audit_' . $log->id,
                     'title' => $title,
+                    'timestamp' => $log->created_at,
                     'time' => Carbon::parse($log->created_at)->diffForHumans(),
                     'icon' => $icon,
                     'iconBg' => $iconBg
@@ -201,7 +263,7 @@ class ActivityController extends Controller
             ->merge($recentOrders)
             ->merge($recentClients)
             ->merge($auditEvents)
-            ->sortByDesc('time')
+            ->sortByDesc('timestamp')
             ->take($limit)
             ->values();
         

@@ -2,7 +2,6 @@
 
 namespace Database\Factories;
 
-use App\Models\Client;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 /**
@@ -18,11 +17,10 @@ class ProjectFactory extends Factory
     public function definition(): array
     {
         return [
-            'title' => fake()->title(),
-            'client_id' => Client::inRandomOrder()->first()->id,
-            'deadline' => fake()->dateTime(),
-            'total_price' => fake()->optional()->randomFloat(2, 10, 1000),
-            'payment_amount' => fake()->randomFloat(2, 0, 1000),
+            'title' => $this->faker->sentence(3),
+            'deadline' => $this->faker->dateTimeBetween('now', '+30 days'),
+            'total_price' => $this->faker->randomFloat(2, 1000, 50000),
+            'payment_amount' => $this->faker->randomFloat(2, 0, 50000),
         ];
     }
 } 

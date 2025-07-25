@@ -12,7 +12,7 @@ return new class extends Migration
             $table->id();
             $table->string('name');
             $table->string('image')->nullable();
-            $table->enum('role', ['admin', 'manager', 'designer', 'print_operator', 'workshop_worker']);
+            $table->boolean('is_active')->default(true);
             $table->string('phone')->nullable();
             $table->string('username')->unique();
             $table->string('password');

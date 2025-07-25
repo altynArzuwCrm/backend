@@ -4,12 +4,28 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 class OrderAssignment extends Model
 {
     use HasFactory;
-    
-    protected $fillable = ['order_id', 'user_id', 'status', 'assigned_by', 'cancelled_at', 'approved_at', 'started_at', 'completed_at', 'assigned_at'];
+    use SoftDeletes;
+
+    protected $fillable = [
+        'order_id',
+        'user_id',
+        'status',
+        'assigned_by',
+        'cancelled_at',
+        'approved_at',
+        'started_at',
+        'assigned_at',
+        'has_design_stage',
+        'has_print_stage',
+        'has_engraving_stage',
+        'has_workshop_stage',
+        'role_type'
+    ];
 
     public function order()
     {
@@ -18,7 +34,7 @@ class OrderAssignment extends Model
 
     public function user()
     {
-      return $this->belongsTo(User::class);
+        return $this->belongsTo(User::class);
     }
 
     public function assignedBy()
@@ -33,10 +49,6 @@ class OrderAssignment extends Model
                 $newStatus = $assignment->status;
 
                 switch ($newStatus) {
-                    case 'completed':
-                        $assignment->completed_at = now();
-                        $assignment->status = 'under_review';
-                        break;
                     case 'approved':
                         $assignment->approved_at = now();
                         break;
@@ -53,7 +65,12 @@ class OrderAssignment extends Model
         });
 
         static::saved(function ($assignment) {
-            // $assignment->order->refreshStatusFromAssignments();
+            if ($assignment->wasChanged('status') && $assignment->status === 'approved') {
+                $order = $assignment->order;
+                if ($order && $order->isCurrentStageApproved()) {
+                    $order->moveToNextStage();
+                }
+            }
         });
     }
-} 
+}

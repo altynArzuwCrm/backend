@@ -3,7 +3,6 @@
 namespace App\Policies;
 
 use App\Models\Comment;
-use App\Models\OrderItem;
 use App\Models\User;
 use Illuminate\Auth\Access\HandlesAuthorization;
 use Illuminate\Auth\Access\Response;
@@ -11,6 +10,13 @@ use Illuminate\Auth\Access\Response;
 class CommentPolicy
 {
     use HandlesAuthorization;
+
+    public function before($user, $ability)
+    {
+        if ($user->hasRole('admin')) {
+            return true;
+        }
+    }
 
     public function viewAny(User $user)
     {
@@ -27,10 +33,6 @@ class CommentPolicy
             return $user->can('view', $comment->order);
         }
 
-        if ($comment->order_item_id) {
-            return $user->can('view', $comment->orderItem);
-        }
-
         return false;
     }
 
@@ -41,6 +43,6 @@ class CommentPolicy
 
     public function delete(User $user, Comment $comment)
     {
-        return $user->id === $comment->user_id || $user->role == 'admin';
+        return $user->id === $comment->user_id || $user->hasRole('admin');
     }
 }

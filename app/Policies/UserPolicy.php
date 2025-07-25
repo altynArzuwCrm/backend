@@ -10,30 +10,30 @@ class UserPolicy
 {
     use HandlesAuthorization;
 
-    public function before(User $authUser, $ability)
+    public function before($authUser, $ability)
     {
-        if (in_array($authUser->role, ['admin', 'manager'])) {
+        if ($authUser->hasAnyRole(['admin', 'manager'])) {
             return true;
         }
     }
 
-    public function viewAny(User $authUser)
+    public function viewAny($authUser)
     {
-        return in_array($authUser->role, ['admin', 'manager']);
+        return $authUser->hasAnyRole(['admin', 'manager']);
     }
 
     public function view(User $authUser, User $user)
     {
-        return in_array($authUser->role, ['admin', 'manager']);
+        return $authUser->hasAnyRole(['admin', 'manager']);
     }
 
     public function update(User $authUser, User $user)
     {
-        return in_array($authUser->role, ['admin', 'manager']);
+        return $authUser->hasAnyRole(['admin', 'manager']);
     }
 
     public function delete(User $authUser, User $user)
     {
-        return in_array($authUser->role, ['admin', 'manager']);
+        return $authUser->hasAnyRole(['admin', 'manager']);
     }
 }

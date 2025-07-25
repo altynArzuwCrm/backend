@@ -16,11 +16,11 @@ class OrderController extends Controller
         if (Gate::denies('viewAny', Order::class)) {
             abort(403, 'Доступ запрещён');
         }
-        $user = auth()->user();
+        $user = request()->user();
 
-        $query = Order::with(['project', 'product', 'manager']);
+        $query = Order::with(['project', 'product', 'client']);
 
-        if (!in_array($user->role, ['admin', 'manager'])) {
+        if (!$user->hasAnyRole(['admin', 'manager'])) {
             $assignedOrderIds = OrderAssignment::query()
                 ->where('user_id', $user->id)
                 ->pluck('order_id');
@@ -32,11 +32,42 @@ class OrderController extends Controller
             $query->where('project_id', $request->project_id);
         }
 
+        if ($request->client_id) {
+            $query->where('client_id', $request->client_id);
+        }
+
         if ($request->filled('stage')) {
             $query->where('stage', $request->stage);
         }
 
-        return response()->json($query->paginate(20));
+        // Фильтр по архивным/неархивным заказам
+        if ($request->filled('is_archived')) {
+            $isArchived = $request->boolean('is_archived');
+            $query->where('is_archived', $isArchived);
+        }
+
+        // Поиск по ID заказа, названию продукта и имени клиента
+        if ($request->filled('search')) {
+            $search = $request->search;
+            $query->where(function ($q) use ($search) {
+                $q->where('id', 'like', '%' . $search . '%')
+                    ->orWhereHas('product', function ($productQuery) use ($search) {
+                        $productQuery->where('name', 'like', '%' . $search . '%');
+                    })
+                    ->orWhereHas('client', function ($clientQuery) use ($search) {
+                        $clientQuery->where('name', 'like', '%' . $search . '%');
+                    });
+            });
+        }
+
+        // --- Сортировка ---
+        $sortBy = $request->get('sort_by', 'id');
+        $sortOrder = $request->get('sort_order', 'desc'); // по умолчанию новые первыми
+        $query->orderBy($sortBy, $sortOrder);
+
+        // --- Поддержка per_page ---
+        $perPage = $request->input('per_page', 30);
+        return response()->json($query->paginate($perPage));
     }
 
     public function show(Order $order)
@@ -45,7 +76,7 @@ class OrderController extends Controller
             abort(403, 'Доступ запрещён');
         }
 
-        $order->load(['project', 'product', 'manager']);
+        $order->load(['project', 'product', 'client']);
 
         return response()->json($order);
     }
@@ -57,14 +88,32 @@ class OrderController extends Controller
         }
 
         $data = $request->validate([
-            'project_id' => ['required', 'exists:projects,id'],
-            'product_id' => ['required', 'exists:products,id'],
-            'quantity' => ['required', 'integer', 'min:1'],
-            'manager_id' => ['nullable', 'exists:users,id'],
-            'deadline' => ['nullable', 'date'],
-            'price' => 'nullable|numeric|min:0',
+            'client_id' => 'required|exists:clients,id',
+            'project_id' => 'nullable|exists:projects,id',
+            'product_id' => 'sometimes|exists:products,id',
+            'quantity' => 'sometimes|integer|min:1',
+            'deadline' => 'nullable|date',
+            'price' => 'nullable|numeric',
         ]);
 
+        // Определяем стадию при создании заказа
+        $product = null;
+        if (isset($data['product_id'])) {
+            $product = \App\Models\Product::find($data['product_id']);
+        }
+        if ($product && $product->has_design_stage) {
+            $data['stage'] = 'design';
+        } else {
+            // Если нет стадии design, ищем следующую доступную стадию
+            $stages = ['print' => 'has_print_stage', 'engraving' => 'has_engraving_stage', 'workshop' => 'has_workshop_stage', 'final' => null, 'completed' => null];
+            $data['stage'] = 'draft';
+            foreach ($stages as $stage => $flag) {
+                if ($flag === null || ($product && $product->$flag)) {
+                    $data['stage'] = $stage;
+                    break;
+                }
+            }
+        }
         $order = Order::create($data);
 
         return response()->json($order, 201);
@@ -78,7 +127,6 @@ class OrderController extends Controller
 
         $data = $request->validate([
             'quantity' => ['sometimes', 'integer', 'min:1'],
-            'manager_id' => ['nullable', 'exists:users,id'],
             'deadline' => ['nullable', 'date'],
             'price' => 'nullable|numeric|min:0',
         ]);
@@ -95,18 +143,43 @@ class OrderController extends Controller
         }
 
         $request->validate([
-            'stage' => 'required|in:draft,design,print,workshop,final,archived,completed,cancelled'
+            'stage' => 'required|in:draft,design,print,engraving,workshop,final,completed,cancelled',
         ]);
 
         $oldStatus = $order->stage;
-        $order->stage = $request->stage;
+        $newStage = $request->stage;
+        $product = $order->product;
 
-        if ($request->stage == 'cancelled') {
+        // --- Назначение сотрудников для этапа (поддержка множественных назначений) ---
+        $roleMap = [
+            'design' => 'designer',
+            'print' => 'print_operator',
+            'engraving' => 'print_operator',
+            'workshop' => 'workshop_worker',
+        ];
+
+        if (isset($roleMap[$newStage])) {
+            $roleType = $roleMap[$newStage];
+
+            // Получаем существующие назначения для этого заказа
+            $existingAssignments = $order->assignments()
+                ->whereHas('user.roles', function ($q) use ($roleType) {
+                    $q->where('name', $roleType);
+                })
+                ->get();
+
+            // Если нет назначений, создаем новые из продукта
+            if ($existingAssignments->isEmpty() && $product) {
+                $this->assignDefaultUsersToOrder($order, $product, $roleType, $request->user());
+            }
+        }
+
+        // --- Причины отмены ---
+        if ($newStage == 'cancelled') {
             $request->validate([
                 'reason' => 'required|string',
                 'reason_status' => 'required|in:refused,not_responding,defective_product'
             ]);
-
             $order->reason = $request->reason;
             $order->reason_status = $request->reason_status;
         } else {
@@ -114,20 +187,32 @@ class OrderController extends Controller
             $order->reason_status = null;
         }
 
-        $order->save();
+        // Автоматическая архивизация при завершении или отмене
+        if ($newStage === 'completed' || $newStage === 'cancelled') {
+            $order->is_archived = true;
+            $order->archived_at = now();
+        } else {
+            $order->is_archived = false;
+            $order->archived_at = null;
+        }
 
-        OrderStatusLog::create([
+        $order->stage = $newStage;
+        $order->save();
+        $order->refresh();
+
+        \App\Models\OrderStatusLog::create([
             'order_id' => $order->id,
             'from_status' => $oldStatus,
             'to_status' => $order->stage,
-            'user_id' => auth()->id(),
+            'user_id' => $request->user()->id,
             'changed_at' => now(),
         ]);
 
         return response()->json([
             'message' => 'Статус обновлён',
             'stage' => $order->stage,
-            'order_id' => $order->id
+            'order_id' => $order->id,
+            'order' => $order->load(['project', 'product', 'client', 'assignments.user'])
         ]);
     }
 
@@ -146,5 +231,60 @@ class OrderController extends Controller
     {
         $logs = $order->statusLogs()->with('user')->orderBy('changed_at', 'desc')->get();
         return response()->json($logs);
+    }
+
+    /**
+     * Назначить пользователей по умолчанию на заказ
+     */
+    private function assignDefaultUsersToOrder($order, $product, $roleType, $assignedBy)
+    {
+        // Сотрудники, назначенные на продукт
+        $productAssignments = $product->assignments()
+            ->where('role_type', $roleType)
+            ->where('is_active', true)
+            ->with('user')
+            ->get();
+
+        // Сотрудники, назначенные на заказ с нужной ролью
+        $orderAssignments = $order->assignments()
+            ->whereHas('user.roles', function ($q) use ($roleType) {
+                $q->where('name', $roleType);
+            })
+            ->with('user')
+            ->get();
+
+        // Объединяем всех кандидатов (user_id => user)
+        $usersToAssign = collect();
+        foreach ($productAssignments as $pa) {
+            if ($pa->user) $usersToAssign[$pa->user->id] = $pa->user;
+        }
+        foreach ($orderAssignments as $oa) {
+            if ($oa->user) $usersToAssign[$oa->user->id] = $oa->user;
+        }
+
+        if ($usersToAssign->isEmpty()) {
+            return false;
+        }
+
+        $assignedUsers = [];
+        foreach ($usersToAssign as $user) {
+            $existingAssignment = $order->assignments()
+                ->where('user_id', $user->id)
+                ->where('status', '!=', 'cancelled')
+                ->first();
+
+            if (!$existingAssignment) {
+                $assignment = $order->assignments()->create([
+                    'user_id' => $user->id,
+                    'status' => 'pending',
+                    'assigned_by' => $assignedBy ? $assignedBy->id : null,
+                    'assigned_at' => now(),
+                ]);
+                $user->notify(new \App\Notifications\OrderAssigned($order, $assignedBy, $roleType, $order->stage));
+                $assignedUsers[] = $user;
+            }
+        }
+
+        return !empty($assignedUsers);
     }
 }

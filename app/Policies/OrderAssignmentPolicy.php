@@ -7,20 +7,26 @@ use App\Models\User;
 
 class OrderAssignmentPolicy
 {
+    public function before($user, $ability)
+    {
+        if ($user->hasAnyRole(['admin', 'manager'])) {
+            return true;
+        }
+    }
+
     public function assign(User $user)
     {
-        return in_array($user->role, ['admin', 'manager']);
+        return $user->hasAnyRole(['admin', 'manager']);
     }
 
     public function delete(User $user)
     {
-        return in_array($user->role, ['admin', 'manager']);
+        return $user->hasAnyRole(['admin', 'manager']);
     }
 
     public function viewAny(User $user)
     {
-        if(in_array($user->role, ['admin', 'manager']))
-        {
+        if ($user->hasAnyRole(['admin', 'manager'])) {
             return true;
         }
 
@@ -29,7 +35,7 @@ class OrderAssignmentPolicy
 
     public function view(User $user, OrderAssignment $assignment)
     {
-        if (in_array($user->role, ['admin', 'manager'])) {
+        if ($user->hasAnyRole(['admin', 'manager'])) {
             return true;
         }
 
@@ -38,10 +44,17 @@ class OrderAssignmentPolicy
 
     public function updateStatus(User $user, OrderAssignment $assignment)
     {
-        if (in_array($user->role, ['admin', 'manager'])) {
+        if ($user->hasAnyRole(['admin', 'manager'])) {
+            // Админ и менеджер могут менять статус
             return true;
         }
 
-        return $user->id === $assignment->user_id;
+        // Назначенный сотрудник может менять статус, но НЕ на "approved"
+        if ($user->id === $assignment->user_id) {
+            // Проверяем, что статус не "approved" (это проверяется в контроллере)
+            return true;
+        }
+
+        return false;
     }
 }

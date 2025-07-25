@@ -17,12 +17,11 @@ class ProductFactory extends Factory
      */
     public function definition(): array
     {
-        $designers = User::where('role', 'designer')->get();
         return [
             'name' => fake()->words(2, true),
-            'designer_id' => $designers->random(),
-            'is_workshop_required' => fake()->boolean(30),
-            'workshop_type' => fake()->optional()->randomElement(['montage', 'binding']),
+            'has_design_stage' => fake()->boolean(80),
+            'has_print_stage' => fake()->boolean(90),
+            'has_workshop_stage' => fake()->boolean(70),
         ];
     }
 }

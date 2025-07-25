@@ -4,20 +4,20 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Http\Resources\UserResource;
-use App\Models\OrderItem;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\Cache;
 
 class UserController extends Controller
 {
     private function checkUserManagementAccess()
     {
         $user = Auth::user();
-        if (!$user || !in_array($user->role, ['admin', 'manager'])) {
+        if (!$user || !$user->hasAnyRole(['admin', 'manager'])) {
             abort(403, 'Доступ запрещён. Только администраторы и менеджеры могут управлять пользователями.');
         }
     }
@@ -29,50 +29,53 @@ class UserController extends Controller
         $query = User::query();
 
         if ($request->filled('role')) {
-            $query->where('role', $request->role);
+            $query->whereHas('roles', function ($q) use ($request) {
+                $q->where('name', $request->role);
+            });
         }
 
         if ($request->filled('search')) {
-            $query->where('name', 'like', '%' . $request->search . '%');
+            $search = $request->search;
+            $query->where(function ($q) use ($search) {
+                $q->where('name', 'like', '%' . $search . '%')
+                    ->orWhere('username', 'like', '%' . $search . '%')
+                    ->orWhere('id', 'like', '%' . $search . '%');
+            });
         }
 
-        $sortBy = $request->get('sort_by', 'name');
+        $sortBy = $request->get('sort_by', 'id');
         $sortOrder = $request->get('sort_order', 'asc');
 
-        if (in_array($sortBy, ['name', 'role', 'created_at'])) {
+        $allowedSorts = ['id', 'name', 'created_at'];
+        if (in_array($sortBy, $allowedSorts)) {
             $query->orderBy($sortBy, $sortOrder);
         }
 
-        $perPage = $request->get('per_page', 10);
-        $users = $query->paginate($perPage);
+        if ($request->has('is_active') && $request->is_active !== '') {
+            $query->where('is_active', $request->is_active);
+        }
+
+        $perPage = $request->get('per_page', 30);
+        $users = $query->with('roles')->paginate($perPage);
 
         return response()->json([
-            'data' => UserResource::collection($users->items()),
+            'data' => $users->items(),
             'pagination' => [
                 'current_page' => $users->currentPage(),
                 'last_page' => $users->lastPage(),
                 'per_page' => $users->perPage(),
                 'total' => $users->total(),
-                'from' => $users->firstItem(),
-                'to' => $users->lastItem(),
-                'has_more_pages' => $users->hasMorePages(),
-                'has_previous_page' => $users->previousPageUrl() !== null,
-                'has_next_page' => $users->nextPageUrl() !== null,
             ]
-        ]);
+        ], 200);
     }
 
     public function getByRole(Request $request, string $role)
     {
         $this->checkUserManagementAccess();
 
-        $allowedRoles = ['admin', 'manager', 'designer', 'print_operator', 'workshop_worker'];
-
-        if (!in_array($role, $allowedRoles)) {
-            abort(400, 'Недопустимая роль');
-        }
-
-        $users = User::where('role', $role)->get();
+        $users = User::whereHas('roles', function ($q) use ($role) {
+            $q->where('name', $role);
+        })->where('is_active', true)->get();
 
         return UserResource::collection($users);
     }
@@ -94,7 +97,9 @@ class UserController extends Controller
             'username' => 'required|string|unique:users,username',
             'phone' => 'nullable|string',
             'password' => 'required|string|min:6',
-            'role' => 'required|in:admin,manager,designer,print_operator,workshop_worker',
+            'roles' => 'required|array|min:1',
+            'roles.*' => 'exists:roles,id',
+            'is_active' => 'boolean',
         ]);
 
         $imagePath = null;
@@ -108,10 +113,12 @@ class UserController extends Controller
             'phone' => $data['phone'] ?? null,
             'password' => Hash::make($data['password']),
             'image' => $imagePath,
-            'role' => $data['role'],
+            'is_active' => $data['is_active'] ?? true,
         ]);
 
-        return new UserResource($user);
+        $user->roles()->sync($data['roles']);
+
+        return new UserResource($user->fresh('roles'));
     }
 
     public function update(Request $request, User $user)
@@ -122,8 +129,11 @@ class UserController extends Controller
             'name' => 'sometimes|string',
             'phone' => 'nullable|string',
             'password' => 'nullable|string|min:6',
+            'username' => 'sometimes|string|unique:users,username,' . $user->id,
             'image' => 'nullable|image|max:5120',
-            'role' => 'sometimes|required|in:admin,manager,designer,print_operator,workshop_worker',
+            'roles' => 'sometimes|array|min:1',
+            'roles.*' => 'exists:roles,id',
+            'is_active' => 'boolean',
         ]);
 
         if ($request->hasFile('image')) {
@@ -138,18 +148,25 @@ class UserController extends Controller
         if (isset($data['name'])) {
             $user->name = $data['name'];
         }
+        if (isset($data['username'])) {
+            $user->username = $data['username'];
+        }
         if (isset($data['phone'])) {
             $user->phone = $data['phone'];
         }
         if (!empty($data['password'])) {
             $user->password = Hash::make($data['password']);
         }
-        if (isset($data['role'])) {
-            $user->role = $data['role'];
+        if (isset($data['is_active'])) {
+            $user->is_active = $data['is_active'];
         }
         $user->save();
 
-        return new UserResource($user);
+        if (isset($data['roles'])) {
+            $user->roles()->sync($data['roles']);
+        }
+
+        return new UserResource($user->fresh('roles'));
     }
 
     public function destroy(User $user)
@@ -162,5 +179,25 @@ class UserController extends Controller
         $user->delete();
 
         return response()->json(['message' => 'Пользователь удалён']);
+    }
+
+    public function toggleActive(User $user)
+    {
+        $this->checkUserManagementAccess();
+
+        $user->is_active = !$user->is_active;
+        $user->save();
+
+        return response()->json([
+            'message' => $user->is_active ? 'Пользователь активирован' : 'Пользователь деактивирован',
+            'is_active' => $user->is_active
+        ]);
+    }
+
+    public function getAllUsers(Request $request)
+    {
+        $this->checkUserManagementAccess();
+        $users = \App\Models\User::all();
+        return UserResource::collection($users);
     }
 }

@@ -22,15 +22,23 @@ class OrderAssignmentFactory extends Factory
 
     public function definition(): array
     {
-        $workers = User::whereIn('role', ['designer', 'printer_operator', 'workshop_worker'])->get();
+        $workers = User::whereHas('roles', function ($q) {
+            $q->whereIn('name', ['designer', 'print_operator', 'workshop_worker']);
+        })->where('is_active', true)->get();
+        $managers = User::whereHas('roles', function ($q) {
+            $q->where('name', 'manager');
+        })->where('is_active', true)->get();
 
         $status = $this->faker->randomElement([
-            'pending', 'in_progress', 'completed', 'cancelled', 'under_review', 'approved'
+            'pending',
+            'in_progress',
+            'cancelled',
+            'under_review',
+            'approved'
         ]);
 
         $timestamps = [
             'started_at'    => null,
-            'completed_at'  => null,
             'cancelled_at'  => null,
             'approved_at'   => null,
         ];
@@ -39,7 +47,6 @@ class OrderAssignmentFactory extends Factory
 
         match ($status) {
             'in_progress' => $timestamps['started_at'] = $baseTime->copy(),
-            'completed'   => $timestamps['completed_at'] = $baseTime->copy()->addDays(1),
             'cancelled'   => $timestamps['cancelled_at'] = $baseTime->copy()->addHours(5),
             'approved'    => $timestamps['approved_at'] = $baseTime->copy()->addDays(2),
             default       => null,
@@ -53,4 +60,4 @@ class OrderAssignmentFactory extends Factory
             'assigned_by'   => User::inRandomOrder()->value('id') ?? User::factory(),
         ], $timestamps);
     }
-} 
+}

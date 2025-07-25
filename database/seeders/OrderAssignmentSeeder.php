@@ -13,8 +13,12 @@ class OrderAssignmentSeeder extends Seeder
 {
     public function run(): void
     {
-        $workers = User::whereIn('role', ['designer', 'print_operator', 'workshop_worker'])->get();
-        $managers = User::where('role', 'manager')->get();
+        $workers = User::whereHas('roles', function ($q) {
+            $q->whereIn('name', ['designer', 'print_operator', 'workshop_worker']);
+        })->where('is_active', true)->get();
+        $managers = User::whereHas('roles', function ($q) {
+            $q->where('name', 'manager');
+        })->where('is_active', true)->get();
 
         if ($workers->isEmpty() || $managers->isEmpty()) {
             return;
@@ -37,4 +41,4 @@ class OrderAssignmentSeeder extends Seeder
             'assigned_by' => $managers->first()->id,
         ]);
     }
-} 
+}

@@ -5,6 +5,7 @@ namespace Database\Factories;
 use App\Models\Project;
 use App\Models\Product;
 use App\Models\User;
+use App\Models\Client;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 /**
@@ -19,15 +20,15 @@ class OrderFactory extends Factory
      */
     public function definition(): array
     {
-        $managers = User::where('role', 'manager')->get();
+        $managers = User::where('role', 'manager')->where('is_active', true)->get();
         return [
+            'client_id' => Client::inRandomOrder()->value('id') ?? 1,
             'project_id' => Project::inRandomOrder()->value('id') ?? 1,
             'product_id' => Product::inRandomOrder()->value('id') ?? 1,
             'quantity' => $this->faker->numberBetween(1, 50),
-            'manager_id' => $managers->isNotEmpty() ? $managers->random()->id : null,
             'price' => fake()->optional()->randomFloat(2, 10, 1000),
             'deadline' => $this->faker->optional()->dateTimeBetween('now', '+7 days'),
-            'stage' => $this->faker->randomElement(['draft', 'design', 'print', 'workshop', 'final', 'archived', 'completed', 'cancelled']),
+            'stage' => $this->faker->randomElement(['draft', 'design', 'print', 'engraving', 'workshop', 'final', 'completed', 'cancelled']),
         ];
     }
 }

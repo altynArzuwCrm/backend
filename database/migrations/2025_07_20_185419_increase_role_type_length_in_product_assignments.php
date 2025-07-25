@@ -11,8 +11,8 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::table('users', function (Blueprint $table) {
-            $table->timestamp('last_login_at')->nullable()->after('password');
+        Schema::table('product_assignments', function (Blueprint $table) {
+            $table->string('role_type', 50)->change(); // Увеличиваем с 20 до 50 символов
         });
     }
 
@@ -21,8 +21,8 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::table('users', function (Blueprint $table) {
-            $table->dropColumn('last_login_at');
+        Schema::table('product_assignments', function (Blueprint $table) {
+            $table->string('role_type', 20)->change(); // Возвращаем к исходному размеру
         });
     }
 };

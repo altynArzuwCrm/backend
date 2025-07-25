@@ -14,12 +14,12 @@ return new class extends Migration
         Schema::create('audit_logs', function (Blueprint $table) {
             $table->id();
             $table->foreignId('user_id')->constrained()->onDelete('cascade');
-            $table->foreignId('order_id')->nullable()->constrained()->onDelete('cascade');
-            $table->foreignId('order_item_id')->nullable()->constrained()->onDelete('cascade');
+            $table->string('auditable_type')->nullable();
+            $table->unsignedBigInteger('auditable_id')->nullable();
+            $table->string('action')->nullable();
+            $table->json('old_values')->nullable();
+            $table->json('new_values')->nullable();
             $table->string('change_type');
-            $table->string('field_name')->nullable();
-            $table->text('old_value')->nullable();
-            $table->text('new_value')->nullable();
             $table->timestamp('created_at');
         });
     }

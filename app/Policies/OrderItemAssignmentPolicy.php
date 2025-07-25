@@ -7,29 +7,35 @@ use App\Models\User;
 
 class OrderItemAssignmentPolicy
 {
+    public function before($user, $ability)
+    {
+        if ($user->hasAnyRole(['admin', 'manager'])) {
+            return true;
+        }
+    }
+
     public function assign(User $user)
     {
-        return in_array($user->role, ['admin', 'manager']);
+        return $user->hasAnyRole(['admin', 'manager']);
     }
 
     public function delete(User $user)
     {
-        return in_array($user->role, ['admin', 'manager']);
+        return $user->hasAnyRole(['admin', 'manager']);
     }
 
     public function viewAny(User $user)
     {
-        if(in_array($user->role, ['admin', 'manager']))
-        {
+        if ($user->hasAnyRole(['admin', 'manager'])) {
             return true;
         }
 
-        return $user->assignedOrderItems()->exists();
+        return false;
     }
 
     public function view(User $user, OrderItemAssignment $assignment)
     {
-        if (in_array($user->role, ['admin', 'manager'])) {
+        if ($user->hasAnyRole(['admin', 'manager'])) {
             return true;
         }
 

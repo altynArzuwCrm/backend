@@ -11,18 +11,24 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::create('order_item_assignments', function (Blueprint $table) {
+        Schema::create('order_assignments', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('order_item_id')->constrained()->cascadeOnDelete();
+            $table->foreignId('order_id')->constrained()->cascadeOnDelete();
             $table->foreignId('user_id')->constrained('users')->cascadeOnDelete();
-            $table->enum('status', ['pending', 'in_progress', 'completed', 'cancelled', 'under_review', 'approved'])->default('pending');
+            $table->enum('status', ['pending', 'in_progress', 'cancelled', 'under_review', 'approved'])->default('pending');
             $table->timestamp('assigned_at')->useCurrent();
             $table->timestamp('started_at')->nullable();
             $table->timestamp('completed_at')->nullable();
             $table->timestamp('cancelled_at')->nullable();
             $table->timestamp('approved_at')->nullable();
             $table->foreignId('assigned_by')->nullable()->constrained('users')->nullOnDelete();
+            $table->boolean('has_design_stage')->default(false);
+            $table->boolean('has_print_stage')->default(false);
+            $table->boolean('has_engraving_stage')->default(false);
+            $table->boolean('has_workshop_stage')->default(false);
+            $table->string('role_type')->nullable();
             $table->timestamps();
+            $table->softDeletes();
         });
     }
 

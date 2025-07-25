@@ -7,33 +7,34 @@ use App\Models\User;
 
 class ClientPolicy
 {
-    public function viewAny(User $user)
+    public function viewAny($user)
     {
-        return in_array($user->role, ['admin', 'manager']);
+        return $user->hasAnyRole(['admin', 'manager']);
     }
 
     public function allClients(User $user)
     {
-        return in_array($user->role, ['admin', 'manager']);
+        // Разрешаем всем активным пользователям
+        return $user->is_active;
     }
 
     public function view(User $user, Client $client)
     {
-        return in_array($user->role, ['admin', 'manager']);
+        return $user->hasAnyRole(['admin', 'manager']);
     }
 
     public function create(User $user)
     {
-        return in_array($user->role, ['admin', 'manager']);
+        return $user->hasAnyRole(['admin', 'manager']);
     }
 
     public function update(User $user, Client $client)
     {
-        return in_array($user->role, ['admin', 'manager']);
+        return $user->hasAnyRole(['admin', 'manager']);
     }
 
     public function delete(User $user, Client $client)
     {
-        return in_array($user->role, ['admin', 'manager']);
+        return $user->hasAnyRole(['admin', 'manager']);
     }
 }

@@ -10,35 +10,43 @@ class ProductPolicy
 {
     use HandlesAuthorization;
 
-    public function before(User $user, $ability)
+    public function viewAny($user)
     {
-        if (in_array($user->role, ['admin', 'manager'])) {
-            return true;
-        }
-    }
-
-    public function viewAny(User $user)
-    {
-        return in_array($user->role, ['admin', 'manager']);
-    }
-
-    public function create(User $user)
-    {
-        return in_array($user->role, ['admin', 'manager']);
+        return $user->hasAnyRole(['admin', 'manager']) || $user->assignedOrders()->exists();
     }
 
     public function view(User $user, Product $product)
     {
-        return in_array($user->role, ['admin', 'manager']);
+        if ($user->hasAnyRole(['admin', 'manager'])) {
+            return true;
+        }
+
+        return $product->orders
+            && $product->orders->flatMap->assignments->where('user_id', $user->id)->isNotEmpty();
+    }
+
+    public function create(User $user)
+    {
+        return $user->hasAnyRole(['admin', 'manager']);
     }
 
     public function update(User $user, Product $product)
     {
-        return in_array($user->role, ['admin', 'manager']);
+        if ($user->hasAnyRole(['admin', 'manager'])) {
+            return true;
+        }
+
+        return $product->orders() &&
+            $product->orders->assignments()->where('user_id', $user->id)->exists();
     }
 
     public function delete(User $user, Product $product)
     {
-        return in_array($user->role, ['admin', 'manager']);
+        return $user->hasAnyRole(['admin', 'manager']);
+    }
+
+    public function allProducts(User $user)
+    {
+        return $user->hasAnyRole(['admin', 'manager']);
     }
 }

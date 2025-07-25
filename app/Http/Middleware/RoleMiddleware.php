@@ -23,7 +23,7 @@ class RoleMiddleware
         $user = Auth::user();
         $allowedRoles = explode(',', $roles);
 
-        if (!in_array($user->role, $allowedRoles)) {
+        if (!$user->hasAnyRole($allowedRoles)) {
             abort(403, 'Access denied. Required roles: ' . implode(', ', $allowedRoles));
         }
 

@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
+use App\Http\Resources\UserResource;
 
 class AuthController extends Controller
 {
@@ -16,7 +17,8 @@ class AuthController extends Controller
             'password' => 'required|string|confirmed|min:6',
             'name' => 'required|string',
             'phone' => 'nullable|string',
-            'role' => 'required|in:admin,manager,designer,print_operator,workshop_worker',
+            'roles' => 'required|array|min:1',
+            'roles.*' => 'exists:roles,id',
         ]);
 
         $user = User::create([
@@ -24,13 +26,13 @@ class AuthController extends Controller
             'password' => Hash::make($data['password']),
             'name' => $data['name'],
             'phone' => $data['phone'] ?? null,
-            'role' => $data['role'],
         ]);
+        $user->roles()->sync($data['roles']);
 
         $token = $user->createToken('api-token')->plainTextToken;
 
         return response()->json([
-            'user' => $user,
+            'user' => new UserResource($user->fresh('roles')),
             'token' => $token,
         ], 201);
     }
@@ -48,10 +50,14 @@ class AuthController extends Controller
             return response()->json(['message' => 'Неверный логин или пароль'], 401);
         }
 
+        if (!$user->is_active) {
+            return response()->json(['message' => 'Ваш аккаунт деактивирован. Обратитесь к администратору.'], 403);
+        }
+
         $token = $user->createToken('api-token')->plainTextToken;
 
         return response()->json([
-            'user' => $user,
+            'user' => new UserResource($user->fresh('roles')),
             'token' => $token,
         ]);
     }
@@ -65,7 +71,7 @@ class AuthController extends Controller
 
     public function me(Request $request)
     {
-        $user = $request->user();
-        return response()->json($user);
+        $user = $request->user()->load('roles');
+        return new UserResource($user);
     }
 }
