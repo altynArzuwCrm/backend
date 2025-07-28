@@ -83,7 +83,7 @@ class CommentController extends Controller
             $roleMap = [
                 'design' => 'designer',
                 'print' => 'print_operator',
-                'engraving' => 'print_operator',
+                'engraving' => 'engraving_operator',
                 'workshop' => 'workshop_worker',
             ];
             $notifiedUserIds = [];

@@ -25,6 +25,46 @@ return new class extends Migration
             // Уникальный индекс для предотвращения дублирования
             $table->unique(['product_id', 'user_id', 'role_type']);
         });
+
+        // Мигрируем существующие назначения
+        $products = DB::table('products')->get();
+        foreach ($products as $product) {
+            if ($product->designer_id) {
+                DB::table('product_assignments')->insert([
+                    'product_id' => $product->id,
+                    'user_id' => $product->designer_id,
+                    'role_type' => 'designer',
+                    'priority' => 1,
+                    'is_active' => true,
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ]);
+            }
+
+            if ($product->print_operator_id) {
+                DB::table('product_assignments')->insert([
+                    'product_id' => $product->id,
+                    'user_id' => $product->print_operator_id,
+                    'role_type' => 'print_operator',
+                    'priority' => 1,
+                    'is_active' => true,
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ]);
+            }
+
+            if ($product->workshop_worker_id) {
+                DB::table('product_assignments')->insert([
+                    'product_id' => $product->id,
+                    'user_id' => $product->workshop_worker_id,
+                    'role_type' => 'workshop_worker',
+                    'priority' => 1,
+                    'is_active' => true,
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ]);
+            }
+        }
     }
 
     /**

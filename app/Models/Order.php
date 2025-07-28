@@ -193,22 +193,36 @@ class Order extends Model
                 $roleMap = [
                     'design' => ['has_design_stage', 'designer_id', 'designer'],
                     'print' => ['has_print_stage', 'print_operator_id', 'print_operator'],
-                    'engraving' => ['has_engraving_stage', 'print_operator_id', 'print_operator'],
+                    'engraving' => ['has_engraving_stage', null, 'engraving_operator'],
                     'workshop' => ['has_workshop_stage', 'workshop_worker_id', 'workshop_worker'],
                 ];
 
                 if (isset($roleMap[$currentStage])) {
                     [$flag, $userField, $role] = $roleMap[$currentStage];
 
-                    if ($product->$flag && $product->$userField) {
-                        $assignments = $this->assignments()
-                            ->whereHas('user.roles', function ($q) use ($role) {
-                                $q->where('name', $role);
-                            })
-                            ->get();
+                    if ($product->$flag) {
+                        // Для engraving_operator_id проверяем только флаг, так как поля нет
+                        if ($userField && $product->$userField) {
+                            $assignments = $this->assignments()
+                                ->whereHas('user.roles', function ($q) use ($role) {
+                                    $q->where('name', $role);
+                                })
+                                ->get();
 
-                        if ($assignments->isNotEmpty() && !$assignments->every(fn($a) => $a->status === 'approved')) {
-                            return false;
+                            if ($assignments->isNotEmpty() && !$assignments->every(fn($a) => $a->status === 'approved')) {
+                                return false;
+                            }
+                        } else {
+                            // Для engraving используем только назначения без проверки поля
+                            $assignments = $this->assignments()
+                                ->whereHas('user.roles', function ($q) use ($role) {
+                                    $q->where('name', $role);
+                                })
+                                ->get();
+
+                            if ($assignments->isNotEmpty() && !$assignments->every(fn($a) => $a->status === 'approved')) {
+                                return false;
+                            }
                         }
                     }
                 }

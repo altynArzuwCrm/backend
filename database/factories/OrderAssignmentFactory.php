@@ -23,7 +23,7 @@ class OrderAssignmentFactory extends Factory
     public function definition(): array
     {
         $workers = User::whereHas('roles', function ($q) {
-            $q->whereIn('name', ['designer', 'print_operator', 'workshop_worker']);
+            $q->whereIn('name', ['designer', 'print_operator', 'engraving_operator', 'workshop_worker']);
         })->where('is_active', true)->get();
         $managers = User::whereHas('roles', function ($q) {
             $q->where('name', 'manager');

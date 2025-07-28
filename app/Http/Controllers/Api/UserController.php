@@ -124,12 +124,6 @@ class UserController extends Controller
 
     public function update(Request $request, User $user)
     {
-        Log::info('REQUEST DATA:', $request->all());
-        Log::info('HAS FILE:', ['hasFile' => $request->hasFile('image')]);
-        Log::info('ALL FILES:', $request->allFiles());
-        Log::info('ALL:', $request->all());
-        Log::info('USER BEFORE:', $user->toArray());
-
         $this->checkUserManagementAccess();
 
         $data = $request->validate([
@@ -167,10 +161,8 @@ class UserController extends Controller
         if (isset($data['is_active'])) {
             $user->is_active = $data['is_active'];
         }
-        $user->save();
 
-        $user->refresh();
-        Log::info('USER AFTER:', $user->toArray());
+        $user->save();
 
         if (isset($data['roles'])) {
             $user->roles()->sync($data['roles']);

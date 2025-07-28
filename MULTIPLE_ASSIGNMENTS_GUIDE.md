@@ -26,10 +26,26 @@ POST /api/products/{product_id}/assignments
 POST /api/products/{product_id}/assignments/bulk
 {
     "assignments": [
-        { "user_id": 1, "role_type": "designer", "priority": 1 },
-        { "user_id": 2, "role_type": "designer", "priority": 2 },
-        { "user_id": 3, "role_type": "designer", "priority": 3 },
-        { "user_id": 4, "role_type": "designer", "priority": 4 }
+        {
+            "user_id": 1,
+            "role_type": "designer",
+            "priority": 1
+        },
+        {
+            "user_id": 2,
+            "role_type": "designer",
+            "priority": 2
+        },
+        {
+            "user_id": 3,
+            "role_type": "designer",
+            "priority": 3
+        },
+        {
+            "user_id": 4,
+            "role_type": "designer",
+            "priority": 4
+        }
     ]
 }
 ```
@@ -45,8 +61,8 @@ POST /api/products/{product_id}/assignments/bulk
 
 Когда заказ переходит на стадию (например, `design`), система автоматически:
 
-1. Проверяет назначенных пользователей для продукта через assignments
-2. Создаёт назначения для всех активных пользователей с соответствующей ролью
+1. Проверяет назначенных пользователей для продукта
+2. Создает назначения для всех активных пользователей с соответствующей ролью
 3. Отправляет уведомления всем назначенным пользователям
 
 ## API Endpoints
@@ -55,6 +71,56 @@ POST /api/products/{product_id}/assignments/bulk
 
 ```bash
 GET /api/products/{product_id}/assignments
+```
+
+**Ответ:**
+
+```json
+{
+    "product_id": 1,
+    "assignments": {
+        "designer": [
+            {
+                "id": 1,
+                "user_id": 1,
+                "role_type": "designer",
+                "priority": 1,
+                "is_active": true,
+                "user": {
+                    "id": 1,
+                    "name": "Дизайнер 1",
+                    "role": "designer"
+                }
+            },
+            {
+                "id": 2,
+                "user_id": 2,
+                "role_type": "designer",
+                "priority": 2,
+                "is_active": true,
+                "user": {
+                    "id": 2,
+                    "name": "Дизайнер 2",
+                    "role": "designer"
+                }
+            }
+        ],
+        "print_operator": [
+            {
+                "id": 3,
+                "user_id": 3,
+                "role_type": "print_operator",
+                "priority": 1,
+                "is_active": true,
+                "user": {
+                    "id": 3,
+                    "name": "Оператор печати",
+                    "role": "print_operator"
+                }
+            }
+        ]
+    }
+}
 ```
 
 ### Получение доступных пользователей
@@ -92,10 +158,8 @@ $product = Product::create([
     'has_workshop_stage' => true,
 ]);
 
-// Назначаем 4 дизайнеров
-$designers = User::whereHas('roles', function($q) {
-    $q->where('name', 'designer');
-})->take(4)->get();
+// Назначаем 4 дизайнера
+$designers = User::where('role', 'designer')->take(4)->get();
 
 foreach ($designers as $index => $designer) {
     $product->assignments()->create([
@@ -145,7 +209,56 @@ if ($firstDesigner->isBusy()) {
 
 ## Логика переходов между стадиями
 
--   Заказ переходит на следующую стадию, когда **все** назначения текущей стадии имеют статус `approved` (или по вашей бизнес-логике)
+### Текущая логика:
+
+-   Заказ переходит на следующую стадию, когда **все** назначения текущей стадии имеют статус `approved`
+
+### Новая логика с множественными назначениями:
+
+-   Заказ переходит на следующую стадию, когда **хотя бы одно** назначение текущей стадии имеет статус `approved`
+-   Или можно настроить, чтобы требовалось одобрение от определенного количества пользователей
+
+## Настройка логики переходов
+
+Вы можете настроить логику переходов в методе `isCurrentStageApproved()` модели `Order`:
+
+```php
+public function isCurrentStageApproved()
+{
+    $stage = $this->stage;
+    $product = $this->product;
+
+    $roleMap = [
+        'design' => 'designer',
+        'print' => 'print_operator',
+        'engraving' => 'print_operator',
+        'workshop' => 'workshop_worker',
+    ];
+
+    if (!isset($roleMap[$stage])) {
+        return true;
+    }
+
+    $roleType = $roleMap[$stage];
+
+    // Получаем все назначения для текущей стадии
+    $assignments = $this->assignments()
+        ->whereHas('user.roles', function ($q) use ($roleType) {
+            $q->where('name', $roleType);
+        })
+        ->get();
+
+    // Вариант 1: Требуется одобрение от всех назначенных
+    return $assignments->isNotEmpty() && $assignments->every(fn($a) => $a->status === 'approved');
+
+    // Вариант 2: Требуется одобрение хотя бы от одного
+    // return $assignments->isNotEmpty() && $assignments->contains('status', 'approved');
+
+    // Вариант 3: Требуется одобрение от большинства
+    // $approvedCount = $assignments->where('status', 'approved')->count();
+    // return $assignments->isNotEmpty() && $approvedCount > ($assignments->count() / 2);
+}
+```
 
 ## Преимущества системы
 
@@ -157,5 +270,7 @@ if ($firstDesigner->isBusy()) {
 
 ## Рекомендации по использованию
 
--   Используйте только систему множественных назначений (assignments) для всех бизнес-процессов
--   Не используйте устаревшие поля типа designer_id, print_operator_id, workshop_worker_id
+1. **Приоритеты:** Используйте приоритеты для обозначения основного и резервных сотрудников
+2. **Активность:** Деактивируйте назначения вместо удаления для сохранения истории
+3. **Балансировка:** Распределяйте нагрузку между несколькими сотрудниками
+4. **Мониторинг:** Отслеживайте эффективность работы с множественными назначениями

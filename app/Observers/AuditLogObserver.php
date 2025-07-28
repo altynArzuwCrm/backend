@@ -68,9 +68,11 @@ class AuditLogObserver
         // Получаем ID пользователя, если он аутентифицирован
         $userId = Auth::id();
         
-        // Если пользователь не аутентифицирован, просто пропускаем логирование
+        // Если пользователь не аутентифицирован (например, в консольных командах),
+        // используем ID первого пользователя или null
         if (!$userId) {
-            return;
+            $firstUser = \App\Models\User::first();
+            $userId = $firstUser ? $firstUser->id : null;
         }
 
         AuditLog::create([

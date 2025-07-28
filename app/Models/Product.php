@@ -11,6 +11,9 @@ class Product extends Model
 
     protected $fillable = [
         'name',
+        'designer_id',
+        'print_operator_id',
+        'workshop_worker_id',
         'has_design_stage',
         'has_print_stage',
         'has_engraving_stage',
@@ -24,7 +27,18 @@ class Product extends Model
         'has_workshop_stage' => 'boolean',
     ];
 
-    // Удалены методы designer(), printOperator(), workshopWorker()
+    public function designer()
+    {
+        return $this->belongsTo(User::class, 'designer_id');
+    }
+    public function printOperator()
+    {
+        return $this->belongsTo(User::class, 'print_operator_id');
+    }
+    public function workshopWorker()
+    {
+        return $this->belongsTo(User::class, 'workshop_worker_id');
+    }
 
     public function orders()
     {
@@ -94,6 +108,7 @@ class Product extends Model
             ->pluck('user');
     }
 
+    // Получить следующего доступного пользователя для роли
     public function getNextAvailableUser($roleType, $excludeUserIds = [])
     {
         return ProductAssignment::getNextAvailableUser($this->id, $roleType, $excludeUserIds);
