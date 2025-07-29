@@ -12,6 +12,7 @@ use App\Http\Controllers\Api\ProductController;
 use App\Http\Controllers\Api\StatsController;
 use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Api\AuditLogController;
+use App\Http\Controllers\Api\ProductAssignmentController;
 use App\Http\Controllers\Api\RoleController;
 use Illuminate\Support\Facades\Route;
 
@@ -35,14 +36,10 @@ Route::middleware(['auth:sanctum', 'handle.null.relations'])->group(function () 
     Route::get('products/all', [ProductController::class, 'allProducts']);
     Route::apiResource('products', ProductController::class);
 
-    // Маршруты для управления назначениями продуктов
     Route::prefix('products/{product}')->group(function () {
-        Route::get('assignments', [\App\Http\Controllers\Api\ProductAssignmentController::class, 'index']);
-        Route::post('assignments', [\App\Http\Controllers\Api\ProductAssignmentController::class, 'store']);
-        Route::post('assignments/bulk', [\App\Http\Controllers\Api\ProductAssignmentController::class, 'bulkAssign']);
+        Route::post('assignments/bulk', [ProductAssignmentController::class, 'bulkAssign']);
         Route::get('assignments/available-users', [\App\Http\Controllers\Api\ProductAssignmentController::class, 'getAvailableUsers']);
-        Route::put('assignments/{assignment}', [\App\Http\Controllers\Api\ProductAssignmentController::class, 'update']);
-        Route::delete('assignments/{assignment}', [\App\Http\Controllers\Api\ProductAssignmentController::class, 'destroy']);
+        Route::apiResource('assignments', ProductAssignmentController::class);
     });
     Route::prefix('orders/{order}')->group(function () {
         Route::post('assign', [OrderAssignmentController::class, 'assign']);
@@ -54,6 +51,11 @@ Route::middleware(['auth:sanctum', 'handle.null.relations'])->group(function () 
         Route::get('{assignment}', [OrderAssignmentController::class, 'show']);
         Route::put('{assignment}/status', [OrderAssignmentController::class, 'updateStatus']);
         Route::delete('{assignment}', [OrderAssignmentController::class, 'destroy']);
+
+        // Массовые операции
+        Route::post('bulk-assign', [OrderAssignmentController::class, 'bulkAssignGlobal']);
+        Route::post('bulk-reassign', [OrderAssignmentController::class, 'bulkReassign']);
+        Route::post('bulk-update', [OrderAssignmentController::class, 'bulkUpdate']);
     });
 
     Route::get('clients/all', [ClientController::class, 'allClients']);
@@ -71,9 +73,23 @@ Route::middleware(['auth:sanctum', 'handle.null.relations'])->group(function () 
     Route::get('notifications/unread', [\App\Http\Controllers\Api\NotificationController::class, 'unread']);
     Route::post('notifications/{id}/read', [\App\Http\Controllers\Api\NotificationController::class, 'markAsRead']);
     Route::post('notifications/read-all', [\App\Http\Controllers\Api\NotificationController::class, 'markAllAsRead']);
-    Route::get('roles', [RoleController::class, 'index']);
+    Route::apiResource('roles', RoleController::class);
+    Route::post('roles/{role}/assign-users', [RoleController::class, 'assignUsers']);
+    Route::post('roles/{role}/remove-users', [RoleController::class, 'removeUsers']);
 
-    // Аудит-логи (только для администраторов)
+    // Stage management routes
+    Route::get('stages/available-roles', [\App\Http\Controllers\Api\StageController::class, 'availableRoles']);
+    Route::get('stages/users-by-roles/all', [\App\Http\Controllers\Api\StageController::class, 'getAllUsersByStageRoles']);
+    Route::apiResource('stages', \App\Http\Controllers\Api\StageController::class);
+    Route::post('stages/reorder', [\App\Http\Controllers\Api\StageController::class, 'reorder']);
+    Route::get('stages/{stage}/users-by-roles', [\App\Http\Controllers\Api\StageController::class, 'getUsersByStageRoles']);
+
+    // Product-Stage management routes
+    Route::get('products/{product}/stages', [\App\Http\Controllers\Api\ProductStageController::class, 'index']);
+    Route::put('products/{product}/stages', [\App\Http\Controllers\Api\ProductStageController::class, 'update']);
+    Route::post('products/{product}/stages', [\App\Http\Controllers\Api\ProductStageController::class, 'addStage']);
+    Route::delete('products/{product}/stages/{stage}', [\App\Http\Controllers\Api\ProductStageController::class, 'removeStage']);
+
     Route::middleware('role:admin')->group(function () {
         Route::get('audit-logs', [AuditLogController::class, 'index']);
         Route::get('audit-logs/stats', [AuditLogController::class, 'stats']);

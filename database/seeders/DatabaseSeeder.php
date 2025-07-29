@@ -32,13 +32,14 @@ class DatabaseSeeder extends Seeder
             ProductAssignmentSeeder::class,
         ]);
 
+        // All data created in specific seeders above
         // Client::factory(10)->create();
         // ClientContact::factory(10)->create();
         // User::factory(10)->create();
-        Project::factory(10)->create();
+        // Project::factory(10)->create();
         // Product::factory(10)->create();
         // Order::factory(20)->create();
-        OrderAssignment::factory(10)->create();
-        Comment::factory(10)->create();
+        // OrderAssignment::factory(10)->create();
+        // Comment::factory(10)->create();
     }
 }

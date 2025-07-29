@@ -41,13 +41,20 @@ class ProductAssignmentController extends Controller
             abort(403, 'Доступ запрещён');
         }
 
+        // Получаем все доступные роли из базы данных
+        $availableRoles = \App\Models\Role::pluck('name')->toArray();
+
+        // Если ролей нет, используем базовые роли
+        if (empty($availableRoles)) {
+            $availableRoles = ['designer', 'print_operator', 'engraving_operator', 'workshop_worker'];
+        }
+
         $data = $request->validate([
             'user_id' => 'required|exists:users,id',
-            'role_type' => 'required|in:designer,print_operator,engraving_operator,workshop_worker',
+            'role_type' => 'required|string|in:' . implode(',', $availableRoles),
             'is_active' => 'sometimes|boolean'
         ]);
 
-        // Проверяем, что пользователь имеет соответствующую роль
         $user = User::findOrFail($data['user_id']);
         if (!$user->hasRole($data['role_type'])) {
             return response()->json([
@@ -55,7 +62,6 @@ class ProductAssignmentController extends Controller
             ], 422);
         }
 
-        // Проверяем уникальность назначения
         $existingAssignment = $product->assignments()
             ->where('user_id', $data['user_id'])
             ->where('role_type', $data['role_type'])
@@ -124,34 +130,49 @@ class ProductAssignmentController extends Controller
             abort(403, 'Доступ запрещён');
         }
 
-        $data = $request->validate([
-            'assignments' => 'required|array|min:1',
-            'assignments.*.user_id' => 'required|exists:users,id',
-            'assignments.*.role_type' => 'required|in:designer,print_operator,engraving_operator,workshop_worker',
+        // Получаем все доступные роли из базы данных
+        $availableRoles = \App\Models\Role::pluck('name')->toArray();
 
+        // Если ролей нет, используем базовые роли
+        if (empty($availableRoles)) {
+            $availableRoles = ['designer', 'print_operator', 'engraving_operator', 'workshop_worker'];
+        }
+
+        $data = $request->validate([
+            'assignments' => 'required|array',
+            'assignments.*.user_id' => 'required|exists:users,id',
+            'assignments.*.role_type' => 'required|string|in:' . implode(',', $availableRoles),
             'assignments.*.is_active' => 'sometimes|boolean'
         ]);
+
+        $currentAssignments = $product->assignments()->get();
+
+        $newAssignmentsMap = collect($data['assignments'])->keyBy(function ($a) {
+            return $a['user_id'] . '_' . $a['role_type'];
+        });
+
+        foreach ($currentAssignments as $assignment) {
+            $key = $assignment->user_id . '_' . $assignment->role_type;
+
+            if ($newAssignmentsMap->has($key)) {
+                $newData = $newAssignmentsMap->get($key);
+                $assignment->update([
+                    'is_active' => $newData['is_active'] ?? true
+                ]);
+                $newAssignmentsMap->forget($key);
+            } else {
+                $assignment->update(['is_active' => false]);
+            }
+        }
 
         $createdAssignments = [];
         $errors = [];
 
-        foreach ($data['assignments'] as $index => $assignmentData) {
+        foreach ($newAssignmentsMap as $assignmentData) {
             try {
-                // Проверяем роль пользователя
-                $user = User::findOrFail($assignmentData['user_id']);
+                $user = \App\Models\User::findOrFail($assignmentData['user_id']);
                 if (!$user->hasRole($assignmentData['role_type'])) {
-                    $errors[] = "Строка {$index}: Пользователь не имеет роль {$assignmentData['role_type']}";
-                    continue;
-                }
-
-                // Проверяем уникальность
-                $existingAssignment = $product->assignments()
-                    ->where('user_id', $assignmentData['user_id'])
-                    ->where('role_type', $assignmentData['role_type'])
-                    ->first();
-
-                if ($existingAssignment) {
-                    $errors[] = "Строка {$index}: Пользователь уже назначен на эту роль";
+                    $errors[] = "Пользователь не имеет роль {$assignmentData['role_type']}";
                     continue;
                 }
 
@@ -160,10 +181,9 @@ class ProductAssignmentController extends Controller
                     'role_type' => $assignmentData['role_type'],
                     'is_active' => $assignmentData['is_active'] ?? true
                 ]);
-
                 $createdAssignments[] = $assignment->load('user');
             } catch (\Exception $e) {
-                $errors[] = "Строка {$index}: " . $e->getMessage();
+                $errors[] = $e->getMessage();
             }
         }
 
@@ -186,18 +206,24 @@ class ProductAssignmentController extends Controller
             abort(403, 'Доступ запрещён');
         }
 
+        // Получаем все доступные роли из базы данных
+        $availableRoles = \App\Models\Role::pluck('name')->toArray();
+
+        // Если ролей нет, используем базовые роли
+        if (empty($availableRoles)) {
+            $availableRoles = ['designer', 'print_operator', 'engraving_operator', 'workshop_worker'];
+        }
+
         $roleType = $request->validate([
-            'role_type' => 'required|in:designer,print_operator,engraving_operator,workshop_worker'
+            'role_type' => 'required|string|in:' . implode(',', $availableRoles)
         ])['role_type'];
 
-        // Получаем пользователей с соответствующей ролью
         $users = User::whereHas('roles', function ($q) use ($roleType) {
             $q->where('name', $roleType);
         })
             ->where('is_active', true)
             ->get();
 
-        // Исключаем уже назначенных пользователей
         $assignedUserIds = $product->assignments()
             ->where('role_type', $roleType)
             ->pluck('user_id');
@@ -210,4 +236,3 @@ class ProductAssignmentController extends Controller
         ]);
     }
 }
- 

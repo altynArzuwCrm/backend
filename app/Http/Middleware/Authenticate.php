@@ -19,7 +19,6 @@ class Authenticate extends Middleware
         parent::authenticate($request, $guards);
         $user = $request->user();
         if ($user && !$user->is_active) {
-            // Разлогиниваем пользователя и возвращаем ошибку
             if (method_exists($user, 'tokens')) {
                 $user->tokens()->delete();
             }

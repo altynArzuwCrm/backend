@@ -16,11 +16,9 @@ class ActivityController extends Controller
     public function index(Request $request)
     {
         $limit = $request->get('limit', 20);
-        
-        // Получаем последние действия из разных источников
+                    
         $activities = collect();
         
-        // Новые пользователи
         $newUsers = User::where('created_at', '>=', Carbon::now()->subDays(7))
             ->orderBy('created_at', 'desc')
             ->limit(10)
@@ -38,14 +36,12 @@ class ActivityController extends Controller
                 ];
             });
         
-        // Новые заказы
         $newOrders = Order::where('created_at', '>=', Carbon::now()->subDays(7))
             ->with(['project', 'client'])
             ->orderBy('created_at', 'desc')
             ->limit(10)
             ->get()
             ->map(function ($order) {
-                // Безопасное получение имени клиента
                 $clientName = 'Неизвестный клиент';
                 $amount = 0;
                 
@@ -54,7 +50,6 @@ class ActivityController extends Controller
                 } elseif ($order->project && $order->project->client) {
                     $clientName = $order->project->client->name;
                 } else {
-                    // Логируем случаи с отсутствующими клиентами
                     Log::warning('Order without client', [
                         'order_id' => $order->id,
                         'project_id' => $order->project_id,
@@ -79,7 +74,6 @@ class ActivityController extends Controller
                 ];
             });
         
-        // Новые клиенты
         $newClients = Client::where('created_at', '>=', Carbon::now()->subDays(7))
             ->orderBy('created_at', 'desc')
             ->limit(10)
@@ -96,8 +90,7 @@ class ActivityController extends Controller
                     'color' => 'purple'
                 ];
             });
-        
-        // Изменения статусов заказов
+
         $statusChanges = AuditLog::where('change_type', 'status_change')
             ->where('created_at', '>=', Carbon::now()->subDays(7))
             ->with(['user', 'order'])
@@ -105,12 +98,10 @@ class ActivityController extends Controller
             ->limit(10)
             ->get()
             ->map(function ($log) {
-                // Безопасное получение данных заказа
                 $orderTitle = 'Неизвестный заказ';
                 if ($log->order) {
                     $orderTitle = $log->order->title ?? "Заказ #{$log->order->id}";
                 } else {
-                    // Логируем случаи с отсутствующими заказами
                     Log::warning('AuditLog without order', [
                         'audit_log_id' => $log->id,
                         'order_id' => $log->order_id,
@@ -130,7 +121,6 @@ class ActivityController extends Controller
                 ];
             });
         
-        // Объединяем все активности и сортируем по времени
         $activities = $activities
             ->merge($newUsers)
             ->merge($newOrders)
@@ -150,10 +140,8 @@ class ActivityController extends Controller
     {
         $limit = $request->get('limit', 10);
         
-        // Упрощенная версия для быстрого отображения
         $recentActivities = collect();
         
-        // Последние 5 новых пользователей
         $recentUsers = User::orderBy('created_at', 'desc')
             ->limit(5)
             ->get()
@@ -168,13 +156,11 @@ class ActivityController extends Controller
                 ];
             });
         
-        // Последние 5 новых заказов
         $recentOrders = Order::with(['project', 'client', 'product'])
             ->orderBy('created_at', 'desc')
             ->limit(5)
             ->get()
             ->map(function ($order) {
-                // Безопасное получение названия заказа
                 $orderTitle = $order->display_name ?? "Заказ #{$order->id}";
                 
                 return [
@@ -187,7 +173,6 @@ class ActivityController extends Controller
                 ];
             });
         
-        // Последние 5 новых клиентов
         $recentClients = Client::orderBy('created_at', 'desc')
             ->limit(5)
             ->get()
@@ -202,7 +187,6 @@ class ActivityController extends Controller
                 ];
             });
         
-        // События из audit_logs
         $auditEvents = AuditLog::with(['auditable' => function ($query) {
             if ($query->getModel() instanceof \App\Models\Order) {
                 $query->with(['product', 'client']);
@@ -216,7 +200,6 @@ class ActivityController extends Controller
                 $icon = 'DocumentIcon';
                 $iconBg = 'bg-orange-500 bg-opacity-20';
                 
-                // Получаем название сущности
                 $entityName = 'неизвестной сущности';
                 if ($log->auditable) {
                     if ($log->auditable_type === 'App\Models\Order') {
@@ -225,8 +208,6 @@ class ActivityController extends Controller
                         $entityName = $log->auditable->name ?? $log->auditable->id;
                     }
                 }
-                
-                // Определяем действие
                 switch ($log->action) {
                     case 'created':
                         $title = "Создан {$log->model_name}: {$entityName}";

@@ -16,57 +16,30 @@ class ProductSeeder extends Seeder
         $products = [
             [
                 'name' => 'Смарт Блокнот A5-1 Черный',
-                'has_design_stage' => true,
-                'has_print_stage' => true,
-                'has_workshop_stage' => true,
             ],
             [
                 'name' => 'Смарт Блокнот A5-1 Синий',
-                'has_design_stage' => true,
-                'has_print_stage' => true,
-                'has_workshop_stage' => true,
             ],
             [
                 'name' => 'Смарт Блокнот A5-1 Белый',
-                'has_design_stage' => true,
-                'has_print_stage' => true,
-                'has_workshop_stage' => true,
             ],
             [
                 'name' => 'Смарт Блокнот A5-2 Черный',
-                'has_design_stage' => true,
-                'has_print_stage' => true,
-                'has_workshop_stage' => true,
             ],
             [
                 'name' => 'Смарт Блокнот A5-3 Зеленый',
-                'has_design_stage' => true,
-                'has_print_stage' => true,
-                'has_workshop_stage' => true,
             ],
             [
                 'name' => 'Смарт Блокнот A5-4 Серый',
-                'has_design_stage' => true,
-                'has_print_stage' => true,
-                'has_workshop_stage' => true,
             ],
             [
                 'name' => 'Блокнот A5-5 СЕРЫЙ',
-                'has_design_stage' => true,
-                'has_print_stage' => true,
-                'has_workshop_stage' => true,
             ],
             [
                 'name' => 'Блокнот A5-5 ЧЕРНЫЙ',
-                'has_design_stage' => true,
-                'has_print_stage' => true,
-                'has_workshop_stage' => true,
             ],
             [
                 'name' => 'Блокнот A5-5 СИНИЙ',
-                'has_design_stage' => true,
-                'has_print_stage' => true,
-                'has_workshop_stage' => true,
             ],
         ];
 
@@ -256,17 +229,14 @@ class ProductSeeder extends Seeder
         foreach ($newProducts as $name) {
             $products[] = [
                 'name' => $name,
-                'has_design_stage' => true,
-                'has_print_stage' => true,
-                'has_workshop_stage' => true,
             ];
         }
 
-        foreach ($products as $product) {
-            Product::firstOrCreate(
-                ['name' => $product['name']],
-                $product
-            );
+        foreach ($products as $productData) {
+            // Auto-assignment happens in Product::boot()
+            Product::create($productData);
         }
+
+        // All products created manually above
     }
 }

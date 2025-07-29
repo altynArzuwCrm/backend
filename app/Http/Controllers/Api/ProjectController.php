@@ -79,7 +79,6 @@ class ProjectController extends Controller
             abort(403, 'Доступ запрещён');
         }
 
-        // Если пришёл массив заказов — создаём проект и заказы
         if ($request->has('orders') && is_array($request->orders) && count($request->orders) > 1) {
             $request->validate([
                 'title' => 'required|string|max:255',
@@ -92,10 +91,8 @@ class ProjectController extends Controller
                 'orders.*.deadline' => 'nullable|date',
                 'orders.*.price' => 'nullable|numeric',
                 'orders.*.client_id' => 'required|exists:clients,id',
-                // Добавляем валидацию сотрудников
-                'orders.*.has_design_stage' => 'sometimes|boolean',
-                'orders.*.has_print_stage' => 'sometimes|boolean',
-                'orders.*.has_workshop_stage' => 'sometimes|boolean',
+                'orders.*.stages' => 'sometimes|array',
+                'orders.*.stages.*' => 'string|exists:stages,name',
             ]);
 
             $project = Project::create([
@@ -114,9 +111,7 @@ class ProjectController extends Controller
                     'quantity' => $orderData['quantity'] ?? 1,
                     'deadline' => $orderData['deadline'] ?? null,
                     'price' => $orderData['price'] ?? null,
-                    'has_design_stage' => $orderData['has_design_stage'] ?? false,
-                    'has_print_stage' => $orderData['has_print_stage'] ?? false,
-                    'has_workshop_stage' => $orderData['has_workshop_stage'] ?? false,
+                    // Stages will be assigned automatically based on product configuration
                 ]);
                 $orders[] = $order;
             }

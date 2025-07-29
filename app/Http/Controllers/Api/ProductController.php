@@ -98,13 +98,33 @@ class ProductController extends Controller
 
         $data = $request->validate([
             'name' => 'required|string|max:255',
-            'has_design_stage' => 'boolean',
-            'has_print_stage' => 'boolean',
-            'has_engraving_stage' => 'boolean',
-            'has_workshop_stage' => 'boolean',
+            'designer_id' => 'nullable|exists:users,id',
+            'print_operator_id' => 'nullable|exists:users,id',
+            'workshop_worker_id' => 'nullable|exists:users,id',
+            'stages' => 'sometimes|array',
+            'stages.*.stage_id' => 'required|exists:stages,id',
+            'stages.*.is_available' => 'boolean',
+            'stages.*.is_default' => 'boolean',
         ]);
 
         $product = Product::create($data);
+
+        // Assign custom stages if provided (auto-assignment happens in model boot)
+        if (isset($data['stages'])) {
+            // Remove auto-assigned stages first
+            $product->productStages()->delete();
+
+            // Assign custom stages
+            foreach ($data['stages'] as $stageData) {
+                \App\Models\ProductStage::create([
+                    'product_id' => $product->id,
+                    'stage_id' => $stageData['stage_id'],
+                    'is_available' => $stageData['is_available'] ?? true,
+                    'is_default' => $stageData['is_default'] ?? false,
+                ]);
+            }
+        }
+
         $product->load(['assignments.user', 'orders.assignments']);
         return response()->json(['data' => new ProductResource($product)], 201);
     }
@@ -131,13 +151,33 @@ class ProductController extends Controller
 
         $data = $request->validate([
             'name' => 'sometimes|string|max:255',
-            'has_design_stage' => 'boolean',
-            'has_print_stage' => 'boolean',
-            'has_engraving_stage' => 'boolean',
-            'has_workshop_stage' => 'boolean',
+            'designer_id' => 'nullable|exists:users,id',
+            'print_operator_id' => 'nullable|exists:users,id',
+            'workshop_worker_id' => 'nullable|exists:users,id',
+            'stages' => 'sometimes|array',
+            'stages.*.stage_id' => 'required|exists:stages,id',
+            'stages.*.is_available' => 'boolean',
+            'stages.*.is_default' => 'boolean',
         ]);
 
         $product->update($data);
+
+        // Update stages if provided
+        if (isset($data['stages'])) {
+            // Remove existing stage assignments
+            $product->productStages()->delete();
+
+            // Assign new stages
+            foreach ($data['stages'] as $stageData) {
+                \App\Models\ProductStage::create([
+                    'product_id' => $product->id,
+                    'stage_id' => $stageData['stage_id'],
+                    'is_available' => $stageData['is_available'] ?? true,
+                    'is_default' => $stageData['is_default'] ?? false,
+                ]);
+            }
+        }
+
         $product->load(['assignments.user', 'orders.assignments']);
         return new ProductResource($product);
     }

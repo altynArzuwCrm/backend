@@ -199,7 +199,7 @@ class UserController extends Controller
     public function getAllUsers(Request $request)
     {
         $this->checkUserManagementAccess();
-        $users = \App\Models\User::all();
+        $users = User::all();
         return UserResource::collection($users);
     }
 }

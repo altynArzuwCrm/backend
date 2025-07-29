@@ -32,9 +32,7 @@ class Project extends Model
         return $this->hasMany(Comment::class);
     }
 
-    /**
-     * Пересчитать общую сумму всех заказов в проекте
-     */
+    
     public function recalculateTotalPrice()
     {
         $total = $this->orders()->sum('price');

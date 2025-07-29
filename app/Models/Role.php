@@ -20,4 +20,10 @@ class Role extends Model
         return $this->belongsToMany(User::class, 'user_roles')
             ->withTimestamps();
     }
+
+    public function stages()
+    {
+        return $this->belongsToMany(Stage::class, 'stage_roles')
+            ->withTimestamps();
+    }
 }

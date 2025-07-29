@@ -13,19 +13,32 @@ class Product extends Model
         'name',
         'designer_id',
         'print_operator_id',
-        'workshop_worker_id',
-        'has_design_stage',
-        'has_print_stage',
-        'has_engraving_stage',
-        'has_workshop_stage',
+        'workshop_worker_id'
     ];
 
     protected $casts = [
-        'has_design_stage' => 'boolean',
-        'has_print_stage' => 'boolean',
-        'has_engraving_stage' => 'boolean',
-        'has_workshop_stage' => 'boolean',
+        'created_at' => 'datetime',
+        'updated_at' => 'datetime',
     ];
+
+    protected static function boot()
+    {
+        parent::boot();
+
+        static::created(function ($product) {
+            // Auto-assign default stages when product is created
+            $defaultStages = Stage::active()->whereIn('name', ['draft', 'design', 'print', 'workshop', 'completed'])->get();
+
+            foreach ($defaultStages as $stage) {
+                ProductStage::create([
+                    'product_id' => $product->id,
+                    'stage_id' => $stage->id,
+                    'is_available' => true,
+                    'is_default' => $stage->name === 'draft',
+                ]);
+            }
+        });
+    }
 
     public function designer()
     {
@@ -43,6 +56,29 @@ class Product extends Model
     public function orders()
     {
         return $this->hasMany(Order::class);
+    }
+
+    public function productStages()
+    {
+        return $this->hasMany(ProductStage::class);
+    }
+
+    public function availableStages()
+    {
+        return $this->belongsToMany(Stage::class, 'product_stages')
+            ->wherePivot('is_available', true)
+            ->withPivot('is_default')
+            ->withTimestamps();
+    }
+
+    public function hasStage($stageName)
+    {
+        return ProductStage::isStageAvailableForProduct($this->id, $stageName);
+    }
+
+    public function getAvailableStages()
+    {
+        return ProductStage::getAvailableStagesForProduct($this->id);
     }
 
     // Отношения для множественных назначений
@@ -71,7 +107,6 @@ class Product extends Model
         return $this->hasMany(ProductAssignment::class)->where('role_type', 'engraving_operator');
     }
 
-    // Методы для получения назначенных пользователей
     public function getDesigners()
     {
         return $this->designerAssignments()
@@ -108,7 +143,6 @@ class Product extends Model
             ->pluck('user');
     }
 
-    // Получить следующего доступного пользователя для роли
     public function getNextAvailableUser($roleType, $excludeUserIds = [])
     {
         return ProductAssignment::getNextAvailableUser($this->id, $roleType, $excludeUserIds);

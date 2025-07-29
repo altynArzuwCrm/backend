@@ -20,10 +20,6 @@ class OrderAssignment extends Model
         'approved_at',
         'started_at',
         'assigned_at',
-        'has_design_stage',
-        'has_print_stage',
-        'has_engraving_stage',
-        'has_workshop_stage',
         'role_type'
     ];
 
@@ -40,6 +36,46 @@ class OrderAssignment extends Model
     public function assignedBy()
     {
         return $this->belongsTo(User::class, 'assigned_by');
+    }
+
+    public function orderStageAssignments()
+    {
+        return $this->hasMany(OrderStageAssignment::class);
+    }
+
+    public function assignedStages()
+    {
+        return $this->belongsToMany(Stage::class, 'order_stage_assignments')
+            ->wherePivot('is_assigned', true)
+            ->withTimestamps();
+    }
+
+    public function isAssignedToStage($stageName)
+    {
+        return $this->assignedStages()->where('name', $stageName)->exists();
+    }
+
+    public function assignToStage($stageName)
+    {
+        $stage = Stage::where('name', $stageName)->first();
+        if ($stage) {
+            OrderStageAssignment::updateOrCreate([
+                'order_assignment_id' => $this->id,
+                'stage_id' => $stage->id,
+            ], [
+                'is_assigned' => true
+            ]);
+        }
+    }
+
+    public function removeFromStage($stageName)
+    {
+        $stage = Stage::where('name', $stageName)->first();
+        if ($stage) {
+            OrderStageAssignment::where('order_assignment_id', $this->id)
+                ->where('stage_id', $stage->id)
+                ->delete();
+        }
     }
 
     protected static function booted()

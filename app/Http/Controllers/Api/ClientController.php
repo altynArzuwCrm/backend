@@ -125,8 +125,7 @@ class ClientController extends Controller
         }
         $client->delete();
 
-        // Сбросить кэш клиентов для всех пользователей (или только нужные ключи)
-        \Cache::flush();
+        Cache::flush();
 
         return response()->json(['message' => 'Клиент удалён']);
     }

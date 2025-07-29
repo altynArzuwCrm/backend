@@ -18,10 +18,15 @@ class ProductResource extends JsonResource
         return [
             'id' => $this->id,
             'name' => $this->name,
-            'has_design_stage' => $this->has_design_stage,
-            'has_print_stage' => $this->has_print_stage,
-            'has_engraving_stage' => $this->has_engraving_stage,
-            'has_workshop_stage' => $this->has_workshop_stage,
+            'available_stages' => $this->availableStages->map(function ($stage) {
+                return [
+                    'id' => $stage->id,
+                    'name' => $stage->name,
+                    'display_name' => $stage->display_name,
+                    'color' => $stage->color,
+                    'is_default' => $stage->pivot->is_default ?? false,
+                ];
+            }),
             'designers' => UserResource::collection($this->getDesigners()),
             'print_operators' => UserResource::collection($this->getPrintOperators()),
             'engraving_operators' => UserResource::collection($this->getEngravingOperators()),

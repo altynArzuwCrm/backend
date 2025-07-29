@@ -32,13 +32,10 @@ class StatsController extends Controller
     }
 
     public function dashboard()
-    {
-        // 1. Количество заказов по стадиям
+    {   
         $ordersByStage = DB::table('orders')->select('stage', DB::raw('count(*) as total'))
             ->groupBy('stage')
             ->pluck('total', 'stage');
-
-        // 2. Количество заказов у каждого сотрудника (по назначениям)
         $ordersByUser = DB::table('order_assignments')->select('user_id', DB::raw('count(*) as total'))
             ->groupBy('user_id')
             ->get()
@@ -64,18 +61,15 @@ class StatsController extends Controller
                 ];
             });
 
-        // 3. Количество заказов закрытых за последние 30 дней (stage = completed, archived_at за 30 дней)
         $closedCount = Order::where('stage', 'completed')
             ->where('archived_at', '>=', now()->subDays(30))
             ->count();
 
-        // 4. Количество назначений "задержано по вине исполнителя" (status in_progress или under_review)
         $delayedAssignmentsQuery = \App\Models\OrderAssignment::whereHas('order', function ($query) {
-            $query->where('deadline', '<', now()); // Дедлайн уже прошел
+            $query->where('deadline', '<', now());
         });
         $delayedAssignments = $delayedAssignmentsQuery->count();
 
-        // Новый массив задержанных назначений
         $delayedAssignmentsList = $delayedAssignmentsQuery
             ->with(['user', 'order'])
             ->get()
@@ -89,7 +83,6 @@ class StatsController extends Controller
                 ];
             });
 
-        // 5. Процент завершённых и отменённых заказов
         $totalOrders = \App\Models\Order::count();
         $completedOrders = \App\Models\Order::where('stage', 'completed')->count();
         $cancelledOrders = \App\Models\Order::where('stage', 'cancelled')->count();
@@ -101,7 +94,7 @@ class StatsController extends Controller
             'orders_by_user' => $ordersByUser,
             'closed_last_30_days' => $closedCount,
             'delayed_assignments' => $delayedAssignments,
-            'delayed_assignments_list' => $delayedAssignmentsList, // <-- теперь всегда есть массив!
+            'delayed_assignments_list' => $delayedAssignmentsList,
             'completed_percent' => $completedPercent,
             'cancelled_percent' => $cancelledPercent,
         ]);

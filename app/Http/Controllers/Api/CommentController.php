@@ -76,12 +76,11 @@ class CommentController extends Controller
             'text' => $data['text'],
         ]);
 
-        // === Уведомления при комментировании заказа ===
         if (!empty($data['order_id'])) {
             $order = Order::findOrFail($data['order_id']);
             $stage = $order->stage;
             $roleMap = [
-                'design' => 'designer',
+                'design' => 'designer', 
                 'print' => 'print_operator',
                 'engraving' => 'engraving_operator',
                 'workshop' => 'workshop_worker',
@@ -105,7 +104,6 @@ class CommentController extends Controller
                     }
                 }
             }
-            // Уведомляем всех админов и менеджеров, кроме автора и уже уведомлённых
             $adminsAndManagers = \App\Models\User::whereHas('roles', function ($q) {
                 $q->whereIn('name', ['admin', 'manager']);
             })->get();

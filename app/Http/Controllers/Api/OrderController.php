@@ -40,21 +40,20 @@ class OrderController extends Controller
             $query->where('stage', $request->stage);
         }
 
-        // Фильтр по архивным/неархивным заказам
         if ($request->filled('is_archived')) {
             $isArchived = $request->boolean('is_archived');
             $query->where('is_archived', $isArchived);
         }
 
-        // Фильтрация по статусу назначения (ожидание, в работе)
         if ($request->filled('assignment_status')) {
             $assignmentStatus = $request->assignment_status;
             $query->whereHas('assignments', function ($q) use ($assignmentStatus) {
                 $q->where('status', $assignmentStatus);
+            })->whereDoesntHave('assignments', function ($q) use ($assignmentStatus) {
+                $q->where('status', '!=', $assignmentStatus);
             });
         }
 
-        // Поиск по ID заказа, названию продукта и имени клиента
         if ($request->filled('search')) {
             $search = $request->search;
             $query->where(function ($q) use ($search) {
@@ -68,12 +67,10 @@ class OrderController extends Controller
             });
         }
 
-        // --- Сортировка ---
         $sortBy = $request->get('sort_by', 'id');
-        $sortOrder = $request->get('sort_order', 'desc'); // по умолчанию новые первыми
+        $sortOrder = $request->get('sort_order', 'desc');
         $query->orderBy($sortBy, $sortOrder);
 
-        // --- Поддержка per_page ---
         $allowedPerPage = [10, 20, 50, 100, 200, 500];
         $perPage = (int) $request->input('per_page', 30);
         if (!in_array($perPage, $allowedPerPage)) {
@@ -108,23 +105,17 @@ class OrderController extends Controller
             'price' => 'nullable|numeric',
         ]);
 
-        // Определяем стадию при создании заказа
         $product = null;
         if (isset($data['product_id'])) {
             $product = \App\Models\Product::find($data['product_id']);
         }
-        if ($product && $product->has_design_stage) {
+        if ($product && $product->hasStage('design')) {
             $data['stage'] = 'design';
         } else {
-            // Если нет стадии design, ищем следующую доступную стадию
-            $stages = ['print' => 'has_print_stage', 'engraving' => 'has_engraving_stage', 'workshop' => 'has_workshop_stage', 'final' => null, 'completed' => null];
-            $data['stage'] = 'draft';
-            foreach ($stages as $stage => $flag) {
-                if ($flag === null || ($product && $product->$flag)) {
-                    $data['stage'] = $stage;
-                    break;
-                }
-            }
+            // Get the first available stage for this product
+            $availableStages = $product ? $product->getAvailableStages() : \App\Models\Stage::active()->ordered()->get();
+            $initialStage = $availableStages->where('is_initial', true)->first();
+            $data['stage'] = $initialStage ? $initialStage->name : 'draft';
         }
         $order = Order::create($data);
 
@@ -154,38 +145,35 @@ class OrderController extends Controller
             abort(403, 'Доступ запрещён');
         }
 
+        $availableStages = \App\Models\Stage::active()->pluck('name')->toArray();
         $request->validate([
-            'stage' => 'required|in:draft,design,print,engraving,workshop,final,completed,cancelled',
+            'stage' => 'required|in:' . implode(',', $availableStages),
         ]);
 
         $oldStatus = $order->stage;
         $newStage = $request->stage;
         $product = $order->product;
 
-        $roleMap = [
-            'design' => 'designer',
-            'print' => 'print_operator',
-            'engraving' => 'engraving_operator',
-            'workshop' => 'workshop_worker',
-        ];
+        // Get stage and its associated roles
+        $stage = \App\Models\Stage::with('roles')->where('name', $newStage)->first();
+        if ($stage && $product) {
+            $rolesForStage = $stage->roles()->wherePivot('auto_assign', true)->get();
 
-        if (isset($roleMap[$newStage])) {
-            $roleType = $roleMap[$newStage];
+            foreach ($rolesForStage as $role) {
+                $roleType = $role->name;
 
-            // Получаем существующие назначения для этого заказа
-            $existingAssignments = $order->assignments()
-                ->whereHas('user.roles', function ($q) use ($roleType) {
-                    $q->where('name', $roleType);
-                })
-                ->get();
+                $existingAssignments = $order->assignments()
+                    ->whereHas('user.roles', function ($q) use ($roleType) {
+                        $q->where('name', $roleType);
+                    })
+                    ->get();
 
-            // Если нет назначений, создаем новые из продукта
-            if ($existingAssignments->isEmpty() && $product) {
-                $this->assignDefaultUsersToOrder($order, $product, $roleType, $request->user());
+                if ($existingAssignments->isEmpty()) {
+                    $this->assignDefaultUsersToOrder($order, $product, $roleType, $request->user());
+                }
             }
         }
 
-        // --- Причины отмены ---
         if ($newStage == 'cancelled') {
             $request->validate([
                 'reason' => 'required|string',
@@ -198,7 +186,6 @@ class OrderController extends Controller
             $order->reason_status = null;
         }
 
-        // Автоматическая архивизация при завершении или отмене
         if ($newStage === 'completed' || $newStage === 'cancelled') {
             $order->is_archived = true;
             $order->archived_at = now();
@@ -244,19 +231,14 @@ class OrderController extends Controller
         return response()->json($logs);
     }
 
-    /**
-     * Назначить пользователей по умолчанию на заказ
-     */
     private function assignDefaultUsersToOrder($order, $product, $roleType, $assignedBy)
     {
-        // Сотрудники, назначенные на продукт
         $productAssignments = $product->assignments()
             ->where('role_type', $roleType)
             ->where('is_active', true)
             ->with('user')
             ->get();
 
-        // Сотрудники, назначенные на заказ с нужной ролью
         $orderAssignments = $order->assignments()
             ->whereHas('user.roles', function ($q) use ($roleType) {
                 $q->where('name', $roleType);
@@ -264,7 +246,6 @@ class OrderController extends Controller
             ->with('user')
             ->get();
 
-        // Объединяем всех кандидатов (user_id => user)
         $usersToAssign = collect();
         foreach ($productAssignments as $pa) {
             if ($pa->user) $usersToAssign[$pa->user->id] = $pa->user;

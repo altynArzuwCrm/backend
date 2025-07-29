@@ -53,7 +53,6 @@ class AuditLog extends Model
         return $this->belongsTo(Project::class);
     }
 
-    // Метод для получения названия действия на русском языке
     public function getActionNameAttribute()
     {
         $actions = [
@@ -69,7 +68,7 @@ class AuditLog extends Model
         return $actions[$this->action] ?? $this->action;
     }
 
-    // Метод для получения названия модели на русском языке
+    
     public function getModelNameAttribute()
     {
         $models = [

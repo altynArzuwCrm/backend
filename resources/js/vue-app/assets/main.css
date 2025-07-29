@@ -1,0 +1,49 @@
+@import './base.css';
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html,
+body {
+  font-family:
+    'Inter',
+    -apple-system,
+    BlinkMacSystemFont,
+    'Segoe UI',
+    Roboto,
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background: white;
+}
+
+#app {
+  font-weight: normal;
+}
+
+a,
+.green {
+  text-decoration: none;
+  color: hsla(160, 100%, 37%, 1);
+  transition: 0.4s;
+  padding: 3px;
+}
+
+@media (hover: hover) {
+  a:hover {
+    background-color: hsla(160, 36%, 65%, 0.2);
+  }
+}
+
+.multiselect-dropdown {
+  z-index: 2001 !important;
+}
+
+.vs__dropdown-menu {
+  max-height: 70px !important;
+  overflow-y: auto !important;
+  min-width: 220px !important;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
+  border-radius: 10px;
+  transition: max-height 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}

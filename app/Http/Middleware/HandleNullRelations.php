@@ -20,7 +20,6 @@ class HandleNullRelations
         try {
             return $next($request);
         } catch (ErrorException $e) {
-            // Проверяем, является ли ошибка связанной с попыткой обращения к свойству null объекта
             if (str_contains($e->getMessage(), 'Attempt to read property') || 
                 str_contains($e->getMessage(), 'Trying to get property') ||
                 str_contains($e->getMessage(), 'Call to a member function')) {

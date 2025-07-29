@@ -55,10 +55,7 @@ class Order extends Model
 
     public function project()
     {
-        return $this->belongsTo(Project::class)->withDefault([
-            'name' => 'Неизвестный проект',
-            'total_price' => 0
-        ]);
+        return $this->belongsTo(Project::class);
     }
 
     public function client()
@@ -72,6 +69,11 @@ class Order extends Model
     public function assignments()
     {
         return $this->hasMany(OrderAssignment::class);
+    }
+
+    public function currentStage()
+    {
+        return $this->belongsTo(Stage::class, 'stage', 'name');
     }
 
     public function product()
@@ -119,66 +121,80 @@ class Order extends Model
 
     public function getNextStage()
     {
-        $stages = ['draft', 'design', 'print', 'engraving', 'workshop', 'final', 'completed'];
-        $currentIndex = array_search($this->stage, $stages);
+        $currentStage = Stage::where('name', $this->stage)->first();
+        if (!$currentStage) {
+            return null;
+        }
 
-        if ($currentIndex === false || $currentIndex >= count($stages) - 1) {
+        $nextStage = $currentStage->getNextStage();
+        if (!$nextStage) {
             return null;
         }
 
         $product = $this->product;
-
-        for ($i = $currentIndex + 1; $i < count($stages); $i++) {
-            $nextStage = $stages[$i];
-
-            if ($nextStage === 'design' && !$product->has_design_stage) {
-                continue;
-            }
-            if ($nextStage === 'print' && !$product->has_print_stage) {
-                continue;
-            }
-            if ($nextStage === 'engraving' && !$product->has_engraving_stage) {
-                continue;
-            }
-            if ($nextStage === 'workshop' && !$product->has_workshop_stage) {
-                continue;
-            }
-
-            return $nextStage;
+        if (!$product) {
+            return $nextStage->name;
         }
 
-        return 'completed';
+        // Keep looking for next available stage if current one is not supported by product
+        while ($nextStage) {
+            $stageName = $nextStage->name;
+
+            // Check if product supports this stage using new dynamic system
+            if (!$product->hasStage($stageName)) {
+                $nextStage = $nextStage->getNextStage();
+                continue;
+            }
+
+            return $stageName;
+        }
+
+        // If no next stage found, return completed
+        $completedStage = Stage::where('name', 'completed')->first();
+        return $completedStage ? $completedStage->name : 'completed';
     }
 
     public function isCurrentStageApproved()
     {
-        $stage = $this->stage;
+        $stageName = $this->stage;
         $product = $this->product;
 
-        $roleMap = [
-            'design' => ['has_design_stage', 'designer', 'has_design_stage'],
-            'print' => ['has_print_stage', 'print_operator', 'has_print_stage'],
-            'engraving' => ['has_engraving_stage', 'engraving_operator', 'has_engraving_stage'],
-            'workshop' => ['has_workshop_stage', 'workshop_worker', 'has_workshop_stage'],
-        ];
-
-        if (!isset($roleMap[$stage])) {
-            return true;
+        $currentStage = Stage::with('roles')->where('name', $stageName)->first();
+        if (!$currentStage) {
+            return true; // Unknown stage, consider approved
         }
 
-        [$flag, $role, $stageField] = $roleMap[$stage];
-
-        if (!$product || !$product->$flag) {
-            return true;
-        }
-
-        // Только назначения с нужной ролью и чекбоксом стадии
-        $assignments = $this->assignments()
-            ->where('role_type', $role)
-            ->where($stageField, true)
+        // Get required roles for this stage
+        $requiredRoles = $currentStage->roles()
+            ->wherePivot('is_required', true)
             ->get();
 
-        return $assignments->isNotEmpty() && $assignments->every(fn($a) => $a->status === 'approved');
+        if ($requiredRoles->isEmpty()) {
+            return true; // No required roles, consider approved
+        }
+
+        // Check if product supports this stage using new dynamic system
+        if (!$product || !$product->hasStage($stageName)) {
+            return true; // Stage not supported by product, consider approved
+        }
+
+        // Check if all required roles have approved assignments
+        foreach ($requiredRoles as $role) {
+            $assignments = $this->assignments()
+                ->where('role_type', $role->name)
+                ->whereHas('orderStageAssignments', function ($q) use ($stageName) {
+                    $q->whereHas('stage', function ($sq) use ($stageName) {
+                        $sq->where('name', $stageName);
+                    });
+                })
+                ->get();
+
+            if ($assignments->isEmpty() || $assignments->every(fn($a) => $a->status !== 'approved')) {
+                return false; // Required role not approved
+            }
+        }
+
+        return true;
     }
 
     public function moveToNextStage()
@@ -213,7 +229,6 @@ class Order extends Model
                                 return false;
                             }
                         } else {
-                            // Для engraving используем только назначения без проверки поля
                             $assignments = $this->assignments()
                                 ->whereHas('user.roles', function ($q) use ($role) {
                                     $q->where('name', $role);
