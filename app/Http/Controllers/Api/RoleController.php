@@ -69,12 +69,24 @@ class RoleController extends Controller
             abort(403, 'Доступ запрещён');
         }
 
-        // Prevent deletion if role is being used
-        if ($role->users()->exists()) {
+        // Prevent deletion if role is being used in active assignments
+        $activeAssignmentsCount = $role->users()->whereHas('assignments', function ($query) {
+            $query->whereHas('order', function ($orderQuery) {
+                $orderQuery->where('is_archived', false);
+            });
+        })->count();
+
+        if ($activeAssignmentsCount > 0) {
             return response()->json([
-                'message' => 'Невозможно удалить роль, которая назначена пользователям'
+                'message' => "Невозможно удалить роль, которая используется в {$activeAssignmentsCount} активных назначениях"
             ], 422);
         }
+
+        // Remove role from all users
+        $role->users()->detach();
+
+        // Remove role from all stages
+        $role->stages()->detach();
 
         $role->delete();
 

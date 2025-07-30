@@ -123,6 +123,16 @@ class ClientController extends Controller
         if (Gate::denies('delete', $client)) {
             abort(403, 'Доступ запрещён');
         }
+
+        // Проверяем активные заказы клиента
+        $activeOrdersCount = $client->orders()->where('is_archived', false)->count();
+
+        if ($activeOrdersCount > 0) {
+            return response()->json([
+                'message' => "Невозможно удалить клиента, у которого есть {$activeOrdersCount} активных заказов"
+            ], 422);
+        }
+
         $client->delete();
 
         Cache::flush();

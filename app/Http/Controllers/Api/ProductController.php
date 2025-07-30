@@ -190,6 +190,15 @@ class ProductController extends Controller
             ], 403);
         }
 
+        // Проверяем все заказы, связанные с товаром
+        $ordersCount = $product->orders()->count();
+
+        if ($ordersCount > 0) {
+            return response()->json([
+                'message' => "Невозможно удалить товар, который используется в {$ordersCount} заказах"
+            ], 422);
+        }
+
         $product->delete();
 
         return response()->json(['message' => 'Товар удалён']);

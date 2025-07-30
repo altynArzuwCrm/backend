@@ -19,7 +19,6 @@ class StageController extends Controller
         }
 
         $stages = Stage::with('roles')
-            ->active()
             ->ordered()
             ->get();
 
@@ -37,20 +36,12 @@ class StageController extends Controller
             'display_name' => 'required|string|max:255',
             'description' => 'nullable|string',
             'order' => 'required|integer|min:1',
-            'is_active' => 'boolean',
-            'is_initial' => 'boolean',
-            'is_final' => 'boolean',
             'color' => 'nullable|string|regex:/^#[0-9A-Fa-f]{6}$/',
             'roles' => 'nullable|array',
             'roles.*.role_id' => 'required|exists:roles,id',
             'roles.*.is_required' => 'boolean',
             'roles.*.auto_assign' => 'boolean',
         ]);
-
-        // Ensure only one initial stage
-        if ($data['is_initial'] ?? false) {
-            Stage::where('is_initial', true)->update(['is_initial' => false]);
-        }
 
         // Adjust orders of other stages
         if (isset($data['order'])) {
@@ -63,9 +54,6 @@ class StageController extends Controller
             'display_name' => $data['display_name'],
             'description' => $data['description'] ?? null,
             'order' => $data['order'],
-            'is_active' => $data['is_active'] ?? true,
-            'is_initial' => $data['is_initial'] ?? false,
-            'is_final' => $data['is_final'] ?? false,
             'color' => $data['color'] ?? '#6366f1',
         ]);
 
@@ -104,9 +92,6 @@ class StageController extends Controller
             'display_name' => 'sometimes|string|max:255',
             'description' => 'nullable|string',
             'order' => 'sometimes|integer|min:1',
-            'is_active' => 'boolean',
-            'is_initial' => 'boolean',
-            'is_final' => 'boolean',
             'color' => 'nullable|string|regex:/^#[0-9A-Fa-f]{6}$/',
             'roles' => 'nullable|array',
             'roles.*.role_id' => 'required|exists:roles,id',
@@ -128,11 +113,6 @@ class StageController extends Controller
                 Stage::whereBetween('order', [$newOrder, $oldOrder - 1])
                     ->increment('order');
             }
-        }
-
-        // Ensure only one initial stage
-        if (($data['is_initial'] ?? false) && !$stage->is_initial) {
-            Stage::where('is_initial', true)->update(['is_initial' => false]);
         }
 
         $stage->update($data);
@@ -158,10 +138,11 @@ class StageController extends Controller
             abort(403, 'Доступ запрещён');
         }
 
-        // Prevent deletion if stage is being used
-        if ($stage->orders()->exists()) {
+        // Prevent deletion if stage is being used in active orders
+        $activeOrdersCount = $stage->orders()->where('is_archived', false)->count();
+        if ($activeOrdersCount > 0) {
             return response()->json([
-                'message' => 'Невозможно удалить стадию, которая используется в заказах'
+                'message' => "Невозможно удалить стадию, которая используется в {$activeOrdersCount} активных заказах"
             ], 422);
         }
 
@@ -211,113 +192,42 @@ class StageController extends Controller
 
     public function getUsersByStageRoles(Request $request, Stage $stage)
     {
-        if (Gate::denies('viewAny', \App\Models\User::class)) {
+        if (Gate::denies('view', $stage)) {
             abort(403, 'Доступ запрещён');
         }
 
-        try {
-            // Получаем роли, связанные со стадией
-            $stageRoles = $stage->roles()->with(['users' => function ($query) {
-                $query->where('is_active', true)
-                    ->select('users.id', 'users.name', 'users.username');
-            }])->get();
+        $roleIds = $stage->roles()->pluck('roles.id');
 
-            $usersByRole = [];
-
-            foreach ($stageRoles as $role) {
-                $users = $role->users->map(function ($user) {
-                    return [
-                        'id' => $user->id,
-                        'name' => $user->name,
-                        'username' => $user->username
-                    ];
-                });
-
-                $usersByRole[$role->name] = [
-                    'role' => [
-                        'id' => $role->id,
-                        'name' => $role->name,
-                        'display_name' => $role->display_name
-                    ],
-                    'users' => $users
-                ];
-            }
-
-            return response()->json([
-                'stage' => [
-                    'id' => $stage->id,
-                    'name' => $stage->name,
-                    'display_name' => $stage->display_name,
-                    'color' => $stage->color
-                ],
-                'users_by_role' => $usersByRole
-            ]);
-        } catch (\Exception $e) {
-            Log::error('Error in getUsersByStageRoles: ' . $e->getMessage());
-            return response()->json([
-                'error' => 'Ошибка при получении пользователей по ролям стадии',
-                'message' => $e->getMessage()
-            ], 500);
+        if ($roleIds->isEmpty()) {
+            return response()->json([]);
         }
+
+        $users = \App\Models\User::whereHas('roles', function ($query) use ($roleIds) {
+            $query->whereIn('roles.id', $roleIds);
+        })->with('roles')->get();
+
+        return response()->json($users);
     }
 
     public function getAllUsersByStageRoles(Request $request)
     {
-        if (Gate::denies('viewAny', \App\Models\User::class)) {
+        if (Gate::denies('viewAny', Stage::class)) {
             abort(403, 'Доступ запрещён');
         }
 
-        try {
-            // Получаем все активные стадии с их ролями
-            $stages = Stage::active()->with(['roles' => function ($query) {
-                $query->with(['users' => function ($userQuery) {
-                    $userQuery->where('is_active', true)
-                        ->select('users.id', 'users.name', 'users.username');
-                }]);
-            }])->get();
+        $stages = Stage::with(['roles.users' => function ($query) {
+            $query->select('users.id', 'name', 'username', 'phone');
+        }])->get();
 
-            $usersByStage = [];
-
-            foreach ($stages as $stage) {
-                $usersByRole = [];
-
-                foreach ($stage->roles as $role) {
-                    $users = $role->users->map(function ($user) {
-                        return [
-                            'id' => $user->id,
-                            'name' => $user->name,
-                            'username' => $user->username
-                        ];
-                    });
-
-                    $usersByRole[$role->name] = [
-                        'role' => [
-                            'id' => $role->id,
-                            'name' => $role->name,
-                            'display_name' => $role->display_name
-                        ],
-                        'users' => $users
-                    ];
-                }
-
-                $usersByStage[$stage->name] = [
-                    'stage' => [
-                        'id' => $stage->id,
-                        'name' => $stage->name,
-                        'display_name' => $stage->display_name,
-                        'color' => $stage->color
-                    ],
-                    'users_by_role' => $usersByRole
-                ];
+        $result = [];
+        foreach ($stages as $stage) {
+            $users = collect();
+            foreach ($stage->roles as $role) {
+                $users = $users->merge($role->users);
             }
-
-            return response()->json($usersByStage);
-        } catch (\Exception $e) {
-            Log::error('Error in getAllUsersByStageRoles: ' . $e->getMessage());
-            return response()->json([
-                'error' => 'Ошибка при получении пользователей по ролям стадий',
-                'message' => $e->getMessage()
-            ], 500);
+            $result[$stage->id] = $users->unique('id')->values();
         }
+
+        return response()->json($result);
     }
 }

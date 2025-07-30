@@ -13,10 +13,10 @@ class Order extends Model
         'client_id',
         'project_id',
         'product_id',
+        'stage_id',
         'quantity',
         'deadline',
         'price',
-        'stage',
         'work_type',
         'reason',
         'reason_status',
@@ -71,9 +71,14 @@ class Order extends Model
         return $this->hasMany(OrderAssignment::class);
     }
 
+    public function stage()
+    {
+        return $this->belongsTo(Stage::class);
+    }
+
     public function currentStage()
     {
-        return $this->belongsTo(Stage::class, 'stage', 'name');
+        return $this->belongsTo(Stage::class);
     }
 
     public function product()

@@ -172,6 +172,15 @@ class ProjectController extends Controller
             abort(403, 'Доступ запрещён');
         }
 
+        // Проверяем активные заказы в проекте
+        $activeOrdersCount = $project->orders()->where('is_archived', false)->count();
+
+        if ($activeOrdersCount > 0) {
+            return response()->json([
+                'message' => "Невозможно удалить проект, в котором есть {$activeOrdersCount} активных заказов"
+            ], 422);
+        }
+
         $project->delete();
 
         return response()->json(['message' => 'Проект удалён']);

@@ -15,16 +15,10 @@ class Stage extends Model
         'display_name',
         'description',
         'order',
-        'is_active',
-        'is_initial',
-        'is_final',
         'color'
     ];
 
     protected $casts = [
-        'is_active' => 'boolean',
-        'is_initial' => 'boolean',
-        'is_final' => 'boolean',
         'order' => 'integer'
     ];
 
@@ -36,12 +30,7 @@ class Stage extends Model
 
     public function orders()
     {
-        return $this->hasMany(Order::class, 'stage', 'name');
-    }
-
-    public function scopeActive($query)
-    {
-        return $query->where('is_active', true);
+        return $this->hasMany(Order::class, 'stage_id');
     }
 
     public function scopeOrdered($query)
@@ -51,16 +40,14 @@ class Stage extends Model
 
     public function getNextStage()
     {
-        return static::active()
-            ->where('order', '>', $this->order)
+        return static::where('order', '>', $this->order)
             ->ordered()
             ->first();
     }
 
     public function getPreviousStage()
     {
-        return static::active()
-            ->where('order', '<', $this->order)
+        return static::where('order', '<', $this->order)
             ->ordered()
             ->orderBy('order', 'desc')
             ->first();
@@ -73,17 +60,11 @@ class Stage extends Model
         $prevStage = $this->getPreviousStage();
 
         return $targetStage->id === $nextStage?->id ||
-            $targetStage->id === $prevStage?->id ||
-            $targetStage->is_final; // Can always go to final stages (cancelled, completed)
-    }
-
-    public static function getInitialStage()
-    {
-        return static::active()->where('is_initial', true)->first();
+            $targetStage->id === $prevStage?->id;
     }
 
     public static function getOrderedStages()
     {
-        return static::active()->ordered()->get();
+        return static::ordered()->get();
     }
 }

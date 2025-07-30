@@ -21,12 +21,6 @@ class ProductAssignmentController extends Controller
         $assignments = $product->assignments()
             ->with('user')
             ->orderBy('role_type')
-            ->get()
-            ->groupBy('role_type');
-
-        $assignments = $product->assignments()
-            ->with('user')
-            ->orderBy('role_type')
             ->get();
 
         return response()->json([

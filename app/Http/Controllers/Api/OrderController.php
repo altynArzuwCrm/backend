@@ -8,6 +8,7 @@ use App\Models\OrderAssignment;
 use App\Models\OrderStatusLog;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Facades\Log;
 
 class OrderController extends Controller
 {
@@ -37,7 +38,10 @@ class OrderController extends Controller
         }
 
         if ($request->filled('stage')) {
-            $query->where('stage', $request->stage);
+            $stage = \App\Models\Stage::where('name', $request->stage)->first();
+            if ($stage) {
+                $query->where('stage_id', $stage->id);
+            }
         }
 
         if ($request->filled('is_archived')) {
@@ -85,7 +89,7 @@ class OrderController extends Controller
             abort(403, 'Доступ запрещён');
         }
 
-        $order->load(['project', 'product', 'client']);
+        $order->load(['project', 'product', 'client', 'stage', 'assignments.user.roles', 'assignments.assignedStages']);
 
         return response()->json($order);
     }
@@ -99,10 +103,18 @@ class OrderController extends Controller
         $data = $request->validate([
             'client_id' => 'required|exists:clients,id',
             'project_id' => 'nullable|exists:projects,id',
+            'project_title' => 'nullable|string|max:255',
             'product_id' => 'sometimes|exists:products,id',
             'quantity' => 'sometimes|integer|min:1',
             'deadline' => 'nullable|date',
             'price' => 'nullable|numeric',
+            'assignments' => 'sometimes|array',
+            'assignments.*.user_id' => 'required|exists:users,id',
+            'assignments.*.role_type' => 'required|string',
+            'assignments.*.stage_id' => 'sometimes|exists:stages,id',
+            'stages' => 'sometimes|array',
+            'stages.*' => 'exists:stages,id',
+            'is_bulk' => 'sometimes|boolean',
         ]);
 
         $product = null;
@@ -117,9 +129,60 @@ class OrderController extends Controller
             $initialStage = $availableStages->where('is_initial', true)->first();
             $data['stage'] = $initialStage ? $initialStage->name : 'draft';
         }
+
+        // Проверяем, что для массового заказа указан проект
+        if (isset($data['is_bulk']) && $data['is_bulk']) {
+            if (!isset($data['project_id']) && !isset($data['project_title'])) {
+                return response()->json([
+                    'message' => 'Проект обязателен для массового заказа'
+                ], 422);
+            }
+
+            // Если указано название проекта, создаем новый проект
+            if (isset($data['project_title']) && !isset($data['project_id'])) {
+                $project = \App\Models\Project::create([
+                    'title' => $data['project_title'],
+                    'client_id' => $data['client_id'],
+                ]);
+                $data['project_id'] = $project->id;
+            }
+        }
+
         $order = Order::create($data);
 
-        return response()->json($order, 201);
+        // Обрабатываем назначения, если они есть
+        if (isset($data['assignments']) && is_array($data['assignments'])) {
+            // Получаем список выбранных стадий
+            $selectedStages = isset($data['stages']) ? $data['stages'] : [];
+
+            foreach ($data['assignments'] as $assignmentData) {
+                // Проверяем, что назначение создается только для выбранных стадий
+                if (isset($assignmentData['stage_id']) && !empty($selectedStages)) {
+                    if (!in_array($assignmentData['stage_id'], $selectedStages)) {
+                        \Log::warning("Attempted to create assignment for non-selected stage: {$assignmentData['stage_id']}");
+                        continue; // Пропускаем назначения для невыбранных стадий
+                    }
+                }
+
+                $assignment = \App\Models\OrderAssignment::create([
+                    'order_id' => $order->id,
+                    'user_id' => $assignmentData['user_id'],
+                    'role_type' => $assignmentData['role_type'],
+                    'assigned_by' => $request->user()->id,
+                    'status' => 'pending',
+                ]);
+
+                // Если указан stage_id, назначаем на конкретную стадию
+                if (isset($assignmentData['stage_id'])) {
+                    $stage = \App\Models\Stage::find($assignmentData['stage_id']);
+                    if ($stage) {
+                        $assignment->assignToStage($stage->name);
+                    }
+                }
+            }
+        }
+
+        return response()->json($order->load('assignments.user'), 201);
     }
 
     public function update(Request $request, Order $order)
@@ -132,11 +195,73 @@ class OrderController extends Controller
             'quantity' => ['sometimes', 'integer', 'min:1'],
             'deadline' => ['nullable', 'date'],
             'price' => 'nullable|numeric|min:0',
+            'project_title' => 'nullable|string|max:255',
+            'assignments' => 'sometimes|array',
+            'assignments.*.user_id' => 'required|exists:users,id',
+            'assignments.*.role_type' => 'required|string',
+            'assignments.*.stage_id' => 'sometimes|exists:stages,id',
+            'stages' => 'sometimes|array',
+            'stages.*' => 'exists:stages,id',
+            'is_bulk' => 'sometimes|boolean',
         ]);
+
+        // Проверяем, что для массового заказа указан проект
+        if (isset($data['is_bulk']) && $data['is_bulk']) {
+            if (!isset($data['project_id']) && !isset($data['project_title'])) {
+                return response()->json([
+                    'message' => 'Проект обязателен для массового заказа'
+                ], 422);
+            }
+
+            // Если указано название проекта, создаем новый проект
+            if (isset($data['project_title']) && !isset($data['project_id'])) {
+                $project = \App\Models\Project::create([
+                    'title' => $data['project_title'],
+                    'client_id' => $data['client_id'],
+                ]);
+                $data['project_id'] = $project->id;
+            }
+        }
 
         $order->update($data);
 
-        return response()->json($order);
+        // Обрабатываем назначения, если они есть
+        if (isset($data['assignments']) && is_array($data['assignments'])) {
+            // Удаляем существующие назначения
+            $order->assignments()->delete();
+
+            // Получаем список выбранных стадий
+            $selectedStages = isset($data['stages']) ? $data['stages'] : [];
+
+            // Создаем новые назначения
+            foreach ($data['assignments'] as $assignmentData) {
+                // Проверяем, что назначение создается только для выбранных стадий
+                if (isset($assignmentData['stage_id']) && !empty($selectedStages)) {
+                    if (!in_array($assignmentData['stage_id'], $selectedStages)) {
+                        Log::warning("Attempted to create assignment for non-selected stage: {$assignmentData['stage_id']}");
+                        continue; // Пропускаем назначения для невыбранных стадий
+                    }
+                }
+
+                $assignment = \App\Models\OrderAssignment::create([
+                    'order_id' => $order->id,
+                    'user_id' => $assignmentData['user_id'],
+                    'role_type' => $assignmentData['role_type'],
+                    'assigned_by' => $request->user()->id,
+                    'status' => 'pending',
+                ]);
+
+                // Если указан stage_id, назначаем на конкретную стадию
+                if (isset($assignmentData['stage_id'])) {
+                    $stage = \App\Models\Stage::find($assignmentData['stage_id']);
+                    if ($stage) {
+                        $assignment->assignToStage($stage->name);
+                    }
+                }
+            }
+        }
+
+        return response()->json($order->load('assignments.user'));
     }
 
     public function updateStage(Request $request, Order $order)
@@ -145,17 +270,27 @@ class OrderController extends Controller
             abort(403, 'Доступ запрещён');
         }
 
-        $availableStages = \App\Models\Stage::active()->pluck('name')->toArray();
         $request->validate([
-            'stage' => 'required|in:' . implode(',', $availableStages),
+            'stage' => 'required|string',
         ]);
 
-        $oldStatus = $order->stage;
-        $newStage = $request->stage;
+        $oldStage = $order->stage;
+        $newStageName = $request->stage;
+
+        // Логируем для отладки
+        \Log::info('Обновление стадии заказа', [
+            'order_id' => $order->id,
+            'old_stage' => $oldStage ? $oldStage->name : 'null',
+            'new_stage' => $newStageName
+        ]);
         $product = $order->product;
 
-        // Get stage and its associated roles
-        $stage = \App\Models\Stage::with('roles')->where('name', $newStage)->first();
+        // Находим стадию по имени
+        $stage = \App\Models\Stage::with('roles')->where('name', $newStageName)->first();
+        if (!$stage) {
+            abort(422, 'Стадия не найдена');
+        }
+
         if ($stage && $product) {
             $rolesForStage = $stage->roles()->wherePivot('auto_assign', true)->get();
 
@@ -174,7 +309,7 @@ class OrderController extends Controller
             }
         }
 
-        if ($newStage == 'cancelled') {
+        if ($newStageName == 'cancelled') {
             $request->validate([
                 'reason' => 'required|string',
                 'reason_status' => 'required|in:refused,not_responding,defective_product'
@@ -186,7 +321,7 @@ class OrderController extends Controller
             $order->reason_status = null;
         }
 
-        if ($newStage === 'completed' || $newStage === 'cancelled') {
+        if ($newStageName === 'completed' || $newStageName === 'cancelled') {
             $order->is_archived = true;
             $order->archived_at = now();
         } else {
@@ -194,23 +329,24 @@ class OrderController extends Controller
             $order->archived_at = null;
         }
 
-        $order->stage = $newStage;
+        $order->stage_id = $stage->id;
         $order->save();
         $order->refresh();
 
+        // Создаем запись в логе изменений статуса
         \App\Models\OrderStatusLog::create([
             'order_id' => $order->id,
-            'from_status' => $oldStatus,
-            'to_status' => $order->stage,
+            'from_status' => $oldStage ? $oldStage->name : null,
+            'to_status' => $order->stage->name,
             'user_id' => $request->user()->id,
             'changed_at' => now(),
         ]);
 
         return response()->json([
             'message' => 'Статус обновлён',
-            'stage' => $order->stage,
+            'stage' => $order->stage->name,
             'order_id' => $order->id,
-            'order' => $order->load(['project', 'product', 'client', 'assignments.user'])
+            'order' => $order->load(['project', 'product', 'client', 'assignments.user', 'stage'])
         ]);
     }
 
@@ -272,7 +408,7 @@ class OrderController extends Controller
                     'assigned_by' => $assignedBy ? $assignedBy->id : null,
                     'assigned_at' => now(),
                 ]);
-                $user->notify(new \App\Notifications\OrderAssigned($order, $assignedBy, $roleType, $order->stage));
+                $user->notify(new \App\Notifications\OrderAssigned($order, $assignedBy, $roleType, $order->stage ? $order->stage->name : null));
                 $assignedUsers[] = $user;
             }
         }

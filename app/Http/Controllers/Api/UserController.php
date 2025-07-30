@@ -47,7 +47,8 @@ class UserController extends Controller
         $sortBy = $request->get('sort_by', 'id');
         $sortOrder = $request->get('sort_order', 'asc');
 
-        $allowedSorts = ['id', 'name', 'created_at'];
+        // Обычная сортировка по полям пользователя
+        $allowedSorts = ['id', 'name', 'username', 'created_at', 'updated_at'];
         if (in_array($sortBy, $allowedSorts)) {
             $query->orderBy($sortBy, $sortOrder);
         }
@@ -174,6 +175,16 @@ class UserController extends Controller
     public function destroy(User $user)
     {
         $this->checkUserManagementAccess();
+
+        // Проверяем все назначения пользователя (не только активные)
+        $assignmentsCount = $user->assignments()->count();
+
+        if ($assignmentsCount > 0) {
+            return response()->json([
+                'message' => "Невозможно удалить пользователя, который назначен в {$assignmentsCount} заказах"
+            ], 422);
+        }
+
         if ($user->image && Storage::disk('public')->exists($user->image)) {
             Storage::disk('public')->delete($user->image);
         }

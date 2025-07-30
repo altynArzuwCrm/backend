@@ -13,6 +13,18 @@ class User extends Authenticatable
 
     protected $fillable = ['name', 'phone', 'username', 'password', 'is_active', 'image'];
 
+    protected static function boot()
+    {
+        parent::boot();
+
+        static::saving(function ($user) {
+            // Очищаем телефон от пробелов и дефисов для уникальности
+            if ($user->phone) {
+                $user->phone = trim($user->phone);
+            }
+        });
+    }
+
     public function roles()
     {
         return $this->belongsToMany(Role::class, 'user_roles')

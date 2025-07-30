@@ -28,7 +28,7 @@ class ProductAssignmentResource extends JsonResource
                 return [
                     'id' => $this->user->id,
                     'name' => $this->user->name,
-                    'email' => $this->user->email,
+                    'username' => $this->user->username,
                     'roles' => $this->user->roles->pluck('name'),
                 ];
             }),
