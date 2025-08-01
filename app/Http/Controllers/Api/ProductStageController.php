@@ -18,7 +18,7 @@ class ProductStageController extends Controller
         }
 
         $productStages = $product->productStages()->with('stage')->get();
-        $availableStages = Stage::active()->get();
+        $availableStages = Stage::all();
 
         return response()->json([
             'product_stages' => $productStages,

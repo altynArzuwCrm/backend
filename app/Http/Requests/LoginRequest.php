@@ -27,7 +27,7 @@ class LoginRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'phone' => 'required|digits:8',
+            'username' => 'required|string',
             'password' => 'required|string|min:6',
         ];
     }
@@ -78,6 +78,6 @@ class LoginRequest extends FormRequest
 
     public function throttleKey(): string
     {
-        return Str::transliterate(Str::lower($this->string('phone')).'|'.$this->ip());
+        return Str::transliterate(Str::lower($this->string('phone')) . '|' . $this->ip());
     }
 }

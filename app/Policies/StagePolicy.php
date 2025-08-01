@@ -13,7 +13,7 @@ class StagePolicy
      */
     public function viewAny(User $user): bool
     {
-        return $user->hasAnyRole(['admin', 'manager']);
+        return $user->isAdminOrManager();
     }
 
     /**
@@ -21,7 +21,7 @@ class StagePolicy
      */
     public function view(User $user, Stage $stage): bool
     {
-        return $user->hasAnyRole(['admin', 'manager']);
+        return $user->isAdminOrManager();
     }
 
     /**

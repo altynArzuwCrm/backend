@@ -4,7 +4,6 @@ namespace Database\Seeders;
 
 use App\Models\Role;
 use App\Models\User;
-use Illuminate\Database\Console\Seeds\WithoutModelEvents;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\Hash;
 
@@ -15,88 +14,116 @@ class UserSeeder extends Seeder
      */
     public function run(): void
     {
-        $users = [
-            [
-                'name' => 'Aylana',
-                'username' => 'aylana',
-                'image' => 'users/admin.jpg',
-                'password' => Hash::make('password'),
-                'is_active' => true,
-            ],
-            [
-                'name' => 'Test',
-                'username' => 'test00',
-                'image' => 'users/manager.jpg',
-                'password' => Hash::make('password'),
-                'is_active' => true,
-            ],
+        // Проверяем, есть ли уже пользователи в базе данных
+        if (User::count() > 0) {
+            $this->command->info('Users already exist. Skipping user creation.');
+            return;
+        }
+
+        // Создаем администратора
+        $admin = User::create([
+            'name' => 'Aylana',
+            'username' => 'aylana',
+            'phone' => null,
+            'password' => Hash::make('password'),
+            'is_active' => true,
+        ]);
+
+        $adminRole = Role::where('name', 'admin')->first();
+        if ($adminRole) {
+            $admin->roles()->attach($adminRole->id);
+        }
+
+        // Создаем менеджера
+        $manager = User::create([
+            'name' => 'Test',
+            'username' => 'test',
+            'phone' => null,
+            'password' => Hash::make('password'),
+            'is_active' => true,
+        ]);
+
+        $managerRole = Role::where('name', 'manager')->first();
+        if ($managerRole) {
+            $manager->roles()->attach($managerRole->id);
+        }
+
+        // Создаем сотрудников с разными ролями
+        $employees = [
             [
                 'name' => 'Вика',
                 'username' => 'vika',
-                'image' => null,
-                'password' => Hash::make('password123'),
-                'is_active' => true,
+                'phone' => null,
+                'roles' => ['designer']
             ],
             [
                 'name' => 'Диана',
                 'username' => 'diana',
-                'image' => null,
-                'password' => Hash::make('password123'),
-                'is_active' => true,
+                'phone' => null,
+                'roles' => ['designer']
             ],
             [
                 'name' => 'Илья',
                 'username' => 'ilya',
-                'image' => null,
-                'password' => Hash::make('password123'),
-                'is_active' => true,
+                'phone' => null,
+                'roles' => ['designer']
             ],
             [
                 'name' => 'Максим',
                 'username' => 'maxim',
-                'image' => null,
-                'password' => Hash::make('password123'),
-                'is_active' => true,
+                'phone' => null,
+                'roles' => ['designer']
             ],
             [
                 'name' => 'Ширали',
                 'username' => 'shirali',
-                'image' => null,
-                'password' => Hash::make('password123'),
-                'is_active' => true,
+                'phone' => null,
+                'roles' => ['designer', 'print_operator']
             ],
             [
                 'name' => 'Куват',
                 'username' => 'kuwat',
-                'image' => null,
-                'password' => Hash::make('password123'),
-                'is_active' => true,
+                'phone' => null,
+                'roles' => ['print_operator', 'engraving_operator']
             ],
             [
                 'name' => 'Ата ага',
-                'username' => 'ataaga',
-                'image' => null,
-                'password' => Hash::make('password123'),
-                'is_active' => true,
+                'username' => 'ata_aga',
+                'phone' => null,
+                'roles' => ['print_operator']
             ],
             [
                 'name' => 'Николай',
                 'username' => 'nikolay',
-                'image' => null,
-                'password' => Hash::make('password123'),
-                'is_active' => true,
+                'phone' => null,
+                'roles' => ['workshop_worker']
             ],
             [
                 'name' => 'Джейхун',
-                'username' => 'djaykhun',
-                'image' => null,
-                'password' => Hash::make('password123'),
-                'is_active' => true,
-            ],
+                'username' => 'jayhun',
+                'phone' => null,
+                'roles' => ['workshop_worker']
+            ]
         ];
 
-        foreach ($users as $userData) {
-            User::firstOrCreate(['username' => $userData['username']], $userData);
+        foreach ($employees as $employeeData) {
+            $user = User::create([
+                'name' => $employeeData['name'],
+                'username' => $employeeData['username'],
+                'phone' => $employeeData['phone'],
+                'password' => Hash::make('password'),
+                'is_active' => true,
+            ]);
+
+            // Привязываем все роли пользователя
+            foreach ($employeeData['roles'] as $roleName) {
+                $role = Role::where('name', $roleName)->first();
+                if ($role) {
+                    $user->roles()->attach($role->id);
+                }
+            }
         }
+
+        $this->command->info('Users created successfully.');
     }
 }

@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\User;
 use App\Models\Product;
 use App\Models\Order;
+use App\Models\Stage;
 use App\Models\ProductAssignment;
 use App\Models\OrderAssignment;
 use App\Models\Role;
@@ -273,11 +274,14 @@ class MultipleAssignmentsTest extends TestCase
             ]
         ]);
 
+        // Получаем стадию draft
+        $draftStage = Stage::where('name', 'draft')->first();
+
         // Создаем заказ
         $order = Order::create([
             'client_id' => $this->client->id,
             'product_id' => $this->product->id,
-            'stage' => 'draft'
+            'stage_id' => $draftStage ? $draftStage->id : 1
         ]);
 
         // Переводим на стадию дизайна

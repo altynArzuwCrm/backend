@@ -17,14 +17,20 @@ class RoleMiddleware
     public function handle(Request $request, Closure $next, string $roles): Response
     {
         if (!Auth::check()) {
-            abort(401, 'Unauthenticated');
+            return response()->json(['message' => 'Unauthenticated'], 401);
         }
 
         $user = Auth::user();
+
+        // Проверяем, активен ли пользователь
+        if (!$user->is_active) {
+            return response()->json(['message' => 'Ваш аккаунт деактивирован. Обратитесь к администратору.'], 403);
+        }
+
         $allowedRoles = explode(',', $roles);
 
         if (!$user->hasAnyRole($allowedRoles)) {
-            abort(403, 'Access denied. Required roles: ' . implode(', ', $allowedRoles));
+            return response()->json(['message' => 'Access denied. Required roles: ' . implode(', ', $allowedRoles)], 403);
         }
 
         return $next($request);

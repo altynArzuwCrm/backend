@@ -9,6 +9,7 @@ use App\Models\OrderAssignment;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Log;
 
 class ProjectController extends Controller
 {
@@ -18,7 +19,7 @@ class ProjectController extends Controller
             abort(403, 'Доступ запрещён');
         }
 
-        $user = auth()->user();
+        $user = $request->user();
 
         $query = Project::with(['orders']);
 
@@ -62,15 +63,44 @@ class ProjectController extends Controller
         return response()->json($projects);
     }
 
-    public function show(Project $project)
+    public function show(Request $request, Project $project)
     {
-        if (Gate::denies('view', $project)) {
-            abort(403, 'Доступ запрещён');
+        try {
+            $user = $request->user();
+            \Log::info('ProjectController@show - User access check', [
+                'user_id' => $user->id,
+                'user_roles' => $user->roles->pluck('name')->toArray(),
+                'project_id' => $project->id,
+                'user_has_elevated_permissions' => $user->hasElevatedPermissions(),
+                'user_is_staff' => $user->isStaff()
+            ]);
+
+            if (Gate::denies('view', $project)) {
+                \Log::warning('ProjectController@show - Access denied', [
+                    'user_id' => $user->id,
+                    'project_id' => $project->id
+                ]);
+                abort(403, 'Доступ запрещён');
+            }
+
+            \Log::info('ProjectController@show - Access granted, loading project data', [
+                'user_id' => $user->id,
+                'project_id' => $project->id
+            ]);
+
+            $project->load(['orders.product', 'orders.client']);
+
+            \Log::info('ProjectController@show - Project data loaded successfully', [
+                'user_id' => $user->id,
+                'project_id' => $project->id,
+                'orders_count' => $project->orders->count()
+            ]);
+
+            return response()->json($project);
+        } catch (\Exception $e) {
+            Log::error('Error in ProjectController@show: ' . $e->getMessage());
+            return response()->json(['error' => 'Ошибка загрузки проекта'], 500);
         }
-
-        $project->load(['orders.product']);
-
-        return response()->json($project);
     }
 
     public function store(Request $request)
@@ -93,6 +123,9 @@ class ProjectController extends Controller
                 'orders.*.client_id' => 'required|exists:clients,id',
                 'orders.*.stages' => 'sometimes|array',
                 'orders.*.stages.*' => 'string|exists:stages,name',
+                'orders.*.assignments' => 'sometimes|array',
+                'orders.*.assignments.*.user_id' => 'required|exists:users,id',
+                'orders.*.assignments.*.role_type' => 'required|string',
             ]);
 
             $project = Project::create([
@@ -100,6 +133,12 @@ class ProjectController extends Controller
                 'deadline' => $request->deadline,
                 'total_price' => $request->total_price,
                 'payment_amount' => $request->payment_amount ?? 0,
+            ]);
+
+            \Log::info('Creating project with orders', [
+                'project_title' => $request->title,
+                'orders_count' => count($request->orders),
+                'orders_data' => $request->orders
             ]);
 
             $orders = [];
@@ -113,6 +152,25 @@ class ProjectController extends Controller
                     'price' => $orderData['price'] ?? null,
                     // Stages will be assigned automatically based on product configuration
                 ]);
+
+                // Обрабатываем назначения для заказа
+                if (isset($orderData['assignments']) && is_array($orderData['assignments'])) {
+                    foreach ($orderData['assignments'] as $assignmentData) {
+                        $assignment = \App\Models\OrderAssignment::create([
+                            'order_id' => $order->id,
+                            'user_id' => $assignmentData['user_id'],
+                            'assigned_by' => auth()->user()->id,
+                            'role_type' => $assignmentData['role_type'],
+                        ]);
+
+                        // Отправляем уведомление о назначении
+                        $user = \App\Models\User::find($assignmentData['user_id']);
+                        if ($user) {
+                            $user->notify(new \App\Notifications\OrderAssigned($order, auth()->user()));
+                        }
+                    }
+                }
+
                 $orders[] = $order;
             }
 

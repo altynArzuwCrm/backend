@@ -25,7 +25,21 @@ class UserController extends Controller
 
     public function index(Request $request)
     {
-        $this->checkUserManagementAccess();
+        $user = Auth::user();
+
+        \Log::info('UserController@index - User access check', [
+            'user_id' => $user->id,
+            'user_roles' => $user->roles->pluck('name')->toArray(),
+            'user_has_elevated_permissions' => $user->hasElevatedPermissions(),
+            'user_is_staff' => $user->isStaff()
+        ]);
+
+        // Разрешаем доступ всем аутентифицированным пользователям для получения списка пользователей
+        // так как эта информация нужна для назначения задач
+        if (!$user) {
+            \Log::warning('UserController@index - Unauthenticated access attempt');
+            abort(401, 'Необходима аутентификация');
+        }
 
         $query = User::query();
 
@@ -60,6 +74,11 @@ class UserController extends Controller
         $perPage = $request->get('per_page', 30);
         $users = $query->with('roles')->paginate($perPage);
 
+        \Log::info('UserController@index - Users loaded successfully', [
+            'user_id' => $user->id,
+            'users_count' => $users->count()
+        ]);
+
         return response()->json([
             'data' => $users->items(),
             'pagination' => [
@@ -73,7 +92,10 @@ class UserController extends Controller
 
     public function getByRole(Request $request, string $role)
     {
-        $this->checkUserManagementAccess();
+        // Проверяем только аутентификацию, без проверки ролей
+        if (!auth()->check()) {
+            abort(401, 'Необходима аутентификация');
+        }
 
         $users = User::whereHas('roles', function ($q) use ($role) {
             $q->where('name', $role);
@@ -153,7 +175,7 @@ class UserController extends Controller
         if (isset($data['username'])) {
             $user->username = $data['username'];
         }
-        if (isset($data['phone'])) {
+        if (array_key_exists('phone', $data)) {
             $user->phone = $data['phone'];
         }
         if (!empty($data['password'])) {

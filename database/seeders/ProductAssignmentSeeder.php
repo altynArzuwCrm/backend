@@ -18,37 +18,37 @@ class ProductAssignmentSeeder extends Seeder
             // Пакеты
             if (mb_strtolower($name) === 'пакеты') {
                 $this->assign($product, [
-                    'designer' => ['вика'],
-                    'print_operator' => ['ширали'],
-                    'engraving_operator' => ['куват'],
-                    'workshop_worker' => ['николай', 'джейхун'],
+                    'designer' => ['Вика'],
+                    'print_operator' => ['Ширали'],
+                    'engraving_operator' => ['Куват'],
+                    'workshop_worker' => ['Николай', 'Джейхун'],
                 ]);
                 continue;
             }
             // Пакеты стикер
             if (mb_strtolower($name) === 'пакеты стикер') {
                 $this->assign($product, [
-                    'designer' => ['вика'],
-                    'print_operator' => ['куват'],
-                    'workshop_worker' => ['николай'],
+                    'designer' => ['Вика'],
+                    'print_operator' => ['Куват'],
+                    'workshop_worker' => ['Николай'],
                 ]);
                 continue;
             }
             // Папки
             if (mb_strtolower($name) === 'папки') {
                 $this->assign($product, [
-                    'designer' => ['вика', 'диана', 'илья', 'максим', 'ширали'],
-                    'print_operator' => ['ата ага'],
-                    'workshop_worker' => ['николай'],
+                    'designer' => ['Вика', 'Диана', 'Илья', 'Максим', 'Ширали'],
+                    'print_operator' => ['Ата ага'],
+                    'workshop_worker' => ['Николай'],
                 ]);
                 continue;
             }
             // Остальные продукты
             $this->assign($product, [
-                'designer' => ['вика', 'диана', 'илья', 'максим', 'ширали'],
-                'print_operator' => ['ширали', 'ата ага', 'куват',],
-                'engraving_operator' => ['куват'],
-                'workshop_worker' => ['николай', 'джейхун'],
+                'designer' => ['Вика', 'Диана', 'Илья', 'Максим', 'Ширали'],
+                'print_operator' => ['Ширали', 'Ата ага', 'Куват'],
+                'engraving_operator' => ['Куват'],
+                'workshop_worker' => ['Николай', 'Джейхун'],
             ]);
         }
     }
@@ -57,8 +57,17 @@ class ProductAssignmentSeeder extends Seeder
     {
         foreach ($roles as $role => $users) {
             foreach ($users as $userName) {
+                // Ищем пользователя по имени (с учетом регистра)
                 $user = User::where('name', $userName)->first();
-                if (!$user) continue;
+                if (!$user) {
+                    // Если не найден, попробуем найти по username
+                    $user = User::where('username', strtolower($userName))->first();
+                }
+                if (!$user) {
+                    $this->command->warn("User not found: {$userName}");
+                    continue;
+                }
+
                 ProductAssignment::firstOrCreate([
                     'product_id' => $product->id,
                     'user_id' => $user->id,

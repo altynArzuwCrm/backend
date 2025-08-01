@@ -32,7 +32,12 @@ class Project extends Model
         return $this->hasMany(Comment::class);
     }
 
-    
+    public function assignments()
+    {
+        return $this->hasManyThrough(OrderAssignment::class, Order::class);
+    }
+
+
     public function recalculateTotalPrice()
     {
         $total = $this->orders()->sum('price');

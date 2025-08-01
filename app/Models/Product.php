@@ -27,14 +27,14 @@ class Product extends Model
 
         static::created(function ($product) {
             // Auto-assign default stages when product is created
-            $defaultStages = Stage::active()->whereIn('name', ['draft', 'design', 'print', 'workshop', 'completed'])->get();
+            $defaultStages = Stage::ordered()->get();
 
             foreach ($defaultStages as $stage) {
                 ProductStage::create([
                     'product_id' => $product->id,
                     'stage_id' => $stage->id,
                     'is_available' => true,
-                    'is_default' => $stage->name === 'draft',
+                    'is_default' => $stage->roles && $stage->roles->count() > 0 && $stage->order === $defaultStages->where('roles')->first()?->order,
                 ]);
             }
         });

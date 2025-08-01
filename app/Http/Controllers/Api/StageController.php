@@ -14,10 +14,8 @@ class StageController extends Controller
 {
     public function index()
     {
-        if (Gate::denies('viewAny', Stage::class)) {
-            abort(403, 'Доступ запрещён');
-        }
-
+        // Разрешаем доступ всем аутентифицированным пользователям
+        // так как стадии нужны для работы с заказами
         $stages = Stage::with('roles')
             ->ordered()
             ->get();

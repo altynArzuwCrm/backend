@@ -25,7 +25,7 @@ class ProductController extends Controller
         if (!in_array($perPage, $allowedPerPage)) {
             $perPage = 30;
         }
-        $query = Product::with(['assignments.user', 'orders.assignments']);
+        $query = Product::with(['assignments.user', 'orders.assignments', 'availableStages.roles']);
 
         if ($request->has('search') && $request->search) {
             $search = $request->search;
@@ -84,7 +84,7 @@ class ProductController extends Controller
             ], 403);
         }
 
-        $product->load(['assignments.user', 'orders.assignments']);
+        $product->load(['assignments.user', 'orders.assignments', 'availableStages.roles']);
         return new ProductResource($product);
     }
 
@@ -125,7 +125,7 @@ class ProductController extends Controller
             }
         }
 
-        $product->load(['assignments.user', 'orders.assignments']);
+        $product->load(['assignments.user', 'orders.assignments', 'availableStages.roles']);
         return response()->json(['data' => new ProductResource($product)], 201);
     }
 
@@ -136,7 +136,7 @@ class ProductController extends Controller
         }
 
         $products = Cache::remember('all_products', 60, function () {
-            return Product::with(['assignments.user', 'orders.assignments'])->orderBy('id')->get();
+            return Product::with(['assignments.user', 'orders.assignments', 'availableStages.roles'])->orderBy('id')->get();
         });
         return ProductResource::collection($products);
     }
@@ -178,7 +178,7 @@ class ProductController extends Controller
             }
         }
 
-        $product->load(['assignments.user', 'orders.assignments']);
+        $product->load(['assignments.user', 'orders.assignments', 'availableStages.roles']);
         return new ProductResource($product);
     }
 

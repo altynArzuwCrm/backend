@@ -44,6 +44,8 @@ Route::middleware(['auth:sanctum', 'handle.null.relations'])->group(function () 
     Route::prefix('orders/{order}')->group(function () {
         Route::post('assign', [OrderAssignmentController::class, 'assign']);
         Route::post('bulk-assign', [OrderAssignmentController::class, 'bulkAssign']);
+        Route::post('assign-to-stage', [OrderAssignmentController::class, 'assignToStage']);
+        Route::post('remove-from-stage', [OrderAssignmentController::class, 'removeFromStage']);
     });
 
     Route::prefix('assignments')->group(function () {

@@ -9,6 +9,7 @@ use App\Models\OrderStatusLog;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\DB;
 
 class OrderController extends Controller
 {
@@ -19,7 +20,7 @@ class OrderController extends Controller
         }
         $user = request()->user();
 
-        $query = Order::with(['project', 'product', 'client']);
+        $query = Order::with(['project', 'product', 'client', 'stage']);
 
         if (!$user->hasAnyRole(['admin', 'manager'])) {
             $assignedOrderIds = OrderAssignment::query()
@@ -80,16 +81,60 @@ class OrderController extends Controller
         if (!in_array($perPage, $allowedPerPage)) {
             $perPage = 30;
         }
-        return response()->json($query->paginate($perPage));
+
+        $result = $query->paginate($perPage);
+
+        // Отладочная информация
+        \Log::info('Orders API response', [
+            'total_orders' => $result->total(),
+            'per_page' => $perPage,
+            'first_order_stage' => $result->first() ? $result->first()->stage : null,
+            'orders_with_stages' => $result->filter(fn($order) => $order->stage)->count(),
+            'orders_without_stages' => $result->filter(fn($order) => !$order->stage)->count(),
+        ]);
+
+        return response()->json($result);
     }
 
     public function show(Order $order)
     {
+        $user = request()->user();
+
+        // Логируем информацию о пользователе и заказе
+        \Log::info('OrderController@show - User access check', [
+            'user_id' => $user->id,
+            'user_roles' => $user->roles->pluck('name')->toArray(),
+            'order_id' => $order->id,
+            'order_assignments_count' => $order->assignments()->count(),
+            'user_has_elevated_permissions' => $user->hasElevatedPermissions(),
+            'user_is_staff' => $user->isStaff(),
+            'user_has_assignment' => $order->assignments()->where('user_id', $user->id)->exists()
+        ]);
+
         if (Gate::denies('view', $order)) {
+            \Log::warning('OrderController@show - Access denied', [
+                'user_id' => $user->id,
+                'order_id' => $order->id
+            ]);
             abort(403, 'Доступ запрещён');
         }
 
+        \Log::info('OrderController@show - Access granted, loading order data', [
+            'user_id' => $user->id,
+            'order_id' => $order->id
+        ]);
+
         $order->load(['project', 'product', 'client', 'stage', 'assignments.user.roles', 'assignments.assignedStages']);
+
+        \Log::info('OrderController@show - Order data loaded successfully', [
+            'user_id' => $user->id,
+            'order_id' => $order->id,
+            'has_project' => !is_null($order->project),
+            'has_product' => !is_null($order->product),
+            'has_client' => !is_null($order->client),
+            'has_stage' => !is_null($order->stage),
+            'assignments_count' => $order->assignments->count()
+        ]);
 
         return response()->json($order);
     }
@@ -121,13 +166,101 @@ class OrderController extends Controller
         if (isset($data['product_id'])) {
             $product = \App\Models\Product::find($data['product_id']);
         }
-        if ($product && $product->hasStage('design')) {
-            $data['stage'] = 'design';
-        } else {
-            // Get the first available stage for this product
-            $availableStages = $product ? $product->getAvailableStages() : \App\Models\Stage::active()->ordered()->get();
-            $initialStage = $availableStages->where('is_initial', true)->first();
-            $data['stage'] = $initialStage ? $initialStage->name : 'draft';
+        // Get the first available stage for this product
+        $availableStages = $product ? $product->getAvailableStages() : \App\Models\Stage::ordered()->get();
+        \Log::info('Available stages for order', ['stages' => $availableStages->pluck('name', 'order')->toArray()]);
+
+        // Определяем начальную стадию на основе назначений
+        $initialStage = null;
+
+        // Если есть назначения в запросе, определяем стадию по ним
+        if (isset($data['assignments']) && is_array($data['assignments']) && !empty($data['assignments'])) {
+            // Получаем все стадии в правильном порядке
+            $orderedStages = $availableStages->sortBy('order');
+
+            // Ищем первую стадию с назначениями
+            foreach ($orderedStages as $stage) {
+                // Пропускаем служебные стадии
+                if (in_array($stage->name, ['draft', 'completed', 'cancelled'])) {
+                    continue;
+                }
+
+                // Проверяем, есть ли назначения для этой стадии
+                $hasAssignmentsForStage = false;
+                foreach ($data['assignments'] as $assignment) {
+                    if (isset($assignment['stage_id'])) {
+                        $assignmentStage = \App\Models\Stage::find($assignment['stage_id']);
+                        if ($assignmentStage && $assignmentStage->name === $stage->name) {
+                            $hasAssignmentsForStage = true;
+                            break;
+                        }
+                    }
+                }
+
+                if ($hasAssignmentsForStage) {
+                    $initialStage = $stage;
+                    break;
+                }
+            }
+        }
+
+        // Если не нашли стадию с назначениями, используем историческую логику
+        if (!$initialStage) {
+            // Берем первую стадию с order_stage_assignments по порядку
+            $stagesWithAssignments = DB::table('order_stage_assignments')
+                ->join('order_assignments', 'order_stage_assignments.order_assignment_id', '=', 'order_assignments.id')
+                ->join('orders', 'order_assignments.order_id', '=', 'orders.id')
+                ->join('stages', 'order_stage_assignments.stage_id', '=', 'stages.id')
+                ->where('orders.product_id', $data['product_id'])
+                ->where('order_stage_assignments.is_assigned', true)
+                ->select('stages.*')
+                ->distinct()
+                ->orderBy('stages.order')
+                ->get();
+
+            \Log::info('Stages with assignments for product', [
+                'product_id' => $data['product_id'],
+                'stages_with_assignments' => $stagesWithAssignments->pluck('name', 'order')->toArray()
+            ]);
+
+            $initialStage = $stagesWithAssignments->first();
+        }
+
+        // Если нет стадий с назначениями, берем первую рабочую стадию
+        if (!$initialStage) {
+            $initialStage = $availableStages->filter(function ($stage) {
+                return $stage && $stage->roles && $stage->roles->count() > 0;
+            })->first();
+        }
+
+        // Если все еще нет стадии, берем первую стадию после draft
+        if (!$initialStage) {
+            $initialStage = $availableStages->filter(function ($stage) {
+                return $stage && $stage->name !== 'draft' && $stage->name !== 'completed' && $stage->name !== 'cancelled';
+            })->first();
+        }
+
+        $data['stage'] = $initialStage ? $initialStage->name : 'draft';
+
+        \Log::info('Setting initial stage', [
+            'initial_stage' => $data['stage'],
+            'found_stage' => $initialStage ? $initialStage->name : 'not found',
+            'is_working_stage' => $initialStage ? true : false,
+            'fallback' => 'draft'
+        ]);
+
+        // Преобразуем название стадии в stage_id
+        if (isset($data['stage'])) {
+            $stage = \App\Models\Stage::where('name', $data['stage'])->first();
+            if ($stage) {
+                $data['stage_id'] = $stage->id;
+                \Log::info('Converted stage name to stage_id', [
+                    'stage_name' => $data['stage'],
+                    'stage_id' => $stage->id
+                ]);
+            } else {
+                \Log::error('Stage not found', ['stage_name' => $data['stage']]);
+            }
         }
 
         // Проверяем, что для массового заказа указан проект
@@ -177,6 +310,30 @@ class OrderController extends Controller
                     $stage = \App\Models\Stage::find($assignmentData['stage_id']);
                     if ($stage) {
                         $assignment->assignToStage($stage->name);
+                    }
+                }
+
+                // Отправляем уведомление назначенному пользователю
+                $assignedUser = \App\Models\User::find($assignmentData['user_id']);
+                if ($assignedUser) {
+                    try {
+                        $assignedUser->notify(new \App\Notifications\OrderAssigned(
+                            $order,
+                            $request->user(),
+                            $assignmentData['role_type'],
+                            $order->stage ? $order->stage->name : null
+                        ));
+                        \Log::info('OrderAssigned notification sent', [
+                            'user_id' => $assignedUser->id,
+                            'order_id' => $order->id,
+                            'assignment_id' => $assignment->id
+                        ]);
+                    } catch (\Exception $e) {
+                        \Log::error('Failed to send OrderAssigned notification', [
+                            'user_id' => $assignedUser->id,
+                            'order_id' => $order->id,
+                            'error' => $e->getMessage()
+                        ]);
                     }
                 }
             }
@@ -258,6 +415,30 @@ class OrderController extends Controller
                         $assignment->assignToStage($stage->name);
                     }
                 }
+
+                // Отправляем уведомление назначенному пользователю
+                $assignedUser = \App\Models\User::find($assignmentData['user_id']);
+                if ($assignedUser) {
+                    try {
+                        $assignedUser->notify(new \App\Notifications\OrderAssigned(
+                            $order,
+                            $request->user(),
+                            $assignmentData['role_type'],
+                            $order->stage ? $order->stage->name : null
+                        ));
+                        \Log::info('OrderAssigned notification sent', [
+                            'user_id' => $assignedUser->id,
+                            'order_id' => $order->id,
+                            'assignment_id' => $assignment->id
+                        ]);
+                    } catch (\Exception $e) {
+                        \Log::error('Failed to send OrderAssigned notification', [
+                            'user_id' => $assignedUser->id,
+                            'order_id' => $order->id,
+                            'error' => $e->getMessage()
+                        ]);
+                    }
+                }
             }
         }
 
@@ -266,7 +447,7 @@ class OrderController extends Controller
 
     public function updateStage(Request $request, Order $order)
     {
-        if (Gate::denies('updateStatus', $order)) {
+        if (Gate::denies('changeOrderStatus', $order)) {
             abort(403, 'Доступ запрещён');
         }
 
@@ -277,6 +458,21 @@ class OrderController extends Controller
         $oldStage = $order->stage;
         $newStageName = $request->stage;
 
+        // Проверяем, можно ли перевести на completed
+        if ($newStageName === 'completed') {
+            // Проверяем, есть ли неодобренные назначения
+            $pendingAssignments = $order->assignments()
+                ->where('status', '!=', 'approved')
+                ->get();
+
+            if ($pendingAssignments->isNotEmpty()) {
+                return response()->json([
+                    'message' => 'Нельзя завершить заказ, пока есть неодобренные назначения',
+                    'pending_assignments_count' => $pendingAssignments->count()
+                ], 422);
+            }
+        }
+
         // Логируем для отладки
         \Log::info('Обновление стадии заказа', [
             'order_id' => $order->id,
@@ -286,27 +482,9 @@ class OrderController extends Controller
         $product = $order->product;
 
         // Находим стадию по имени
-        $stage = \App\Models\Stage::with('roles')->where('name', $newStageName)->first();
+        $stage = \App\Models\Stage::where('name', $newStageName)->first();
         if (!$stage) {
             abort(422, 'Стадия не найдена');
-        }
-
-        if ($stage && $product) {
-            $rolesForStage = $stage->roles()->wherePivot('auto_assign', true)->get();
-
-            foreach ($rolesForStage as $role) {
-                $roleType = $role->name;
-
-                $existingAssignments = $order->assignments()
-                    ->whereHas('user.roles', function ($q) use ($roleType) {
-                        $q->where('name', $roleType);
-                    })
-                    ->get();
-
-                if ($existingAssignments->isEmpty()) {
-                    $this->assignDefaultUsersToOrder($order, $product, $roleType, $request->user());
-                }
-            }
         }
 
         if ($newStageName == 'cancelled') {
@@ -342,6 +520,61 @@ class OrderController extends Controller
             'changed_at' => now(),
         ]);
 
+        // Отправляем уведомления администраторам и менеджерам о переходе на новую стадию
+        $adminsAndManagers = \App\Models\User::whereHas('roles', function ($q) {
+            $q->whereIn('name', ['admin', 'manager']);
+        })->get();
+
+        foreach ($adminsAndManagers as $admin) {
+            $admin->notify(new \App\Notifications\OrderStageChanged($order, $oldStage, $order->stage, $request->user()));
+        }
+
+        // Отправляем уведомления пользователям, назначенным на эту стадию
+        $stageAssignments = $order->assignments()
+            ->whereHas('orderStageAssignments', function ($q) use ($stage) {
+                $q->where('stage_id', $stage->id);
+            })
+            ->with(['user', 'orderStageAssignments'])
+            ->get();
+
+        foreach ($stageAssignments as $assignment) {
+            $assignedUser = $assignment->user;
+            if ($assignedUser && $assignedUser->id !== $request->user()->id) {
+                try {
+                    \Log::info('Attempting to send stage change notification', [
+                        'user_id' => $assignedUser->id,
+                        'order_id' => $order->id,
+                        'stage' => $order->stage->name,
+                        'role_type' => $assignment->role_type
+                    ]);
+
+                    $notification = new \App\Notifications\OrderStageChanged(
+                        $order,
+                        $oldStage,
+                        $order->stage,
+                        $request->user(),
+                        $assignment->role_type
+                    );
+
+                    $assignedUser->notify($notification);
+
+                    \Log::info('Stage change notification sent to assigned user', [
+                        'user_id' => $assignedUser->id,
+                        'order_id' => $order->id,
+                        'stage' => $order->stage->name,
+                        'role_type' => $assignment->role_type
+                    ]);
+                } catch (\Exception $e) {
+                    \Log::error('Failed to send stage change notification to assigned user', [
+                        'user_id' => $assignedUser->id,
+                        'order_id' => $order->id,
+                        'error' => $e->getMessage(),
+                        'trace' => $e->getTraceAsString()
+                    ]);
+                }
+            }
+        }
+
         return response()->json([
             'message' => 'Статус обновлён',
             'stage' => $order->stage->name,
@@ -363,7 +596,37 @@ class OrderController extends Controller
 
     public function statusLogs(Order $order)
     {
+        $user = request()->user();
+
+        \Log::info('OrderController@statusLogs - User access check', [
+            'user_id' => $user->id,
+            'user_roles' => $user->roles->pluck('name')->toArray(),
+            'order_id' => $order->id,
+            'user_has_elevated_permissions' => $user->hasElevatedPermissions(),
+            'user_is_staff' => $user->isStaff()
+        ]);
+
+        if (Gate::denies('view', $order)) {
+            \Log::warning('OrderController@statusLogs - Access denied', [
+                'user_id' => $user->id,
+                'order_id' => $order->id
+            ]);
+            abort(403, 'Доступ запрещён');
+        }
+
+        \Log::info('OrderController@statusLogs - Access granted, loading logs', [
+            'user_id' => $user->id,
+            'order_id' => $order->id
+        ]);
+
         $logs = $order->statusLogs()->with('user')->orderBy('changed_at', 'desc')->get();
+
+        \Log::info('OrderController@statusLogs - Logs loaded successfully', [
+            'user_id' => $user->id,
+            'order_id' => $order->id,
+            'logs_count' => $logs->count()
+        ]);
+
         return response()->json($logs);
     }
 

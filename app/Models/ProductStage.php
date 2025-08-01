@@ -49,7 +49,10 @@ class ProductStage extends Model
         return static::where('product_id', $productId)
             ->where('is_available', true)
             ->with('stage')
+            ->join('stages', 'product_stages.stage_id', '=', 'stages.id')
+            ->orderBy('stages.order')
             ->get()
-            ->pluck('stage');
+            ->pluck('stage')
+            ->filter(); // Убираем null значения
     }
 }

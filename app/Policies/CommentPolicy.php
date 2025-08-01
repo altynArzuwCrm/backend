@@ -13,7 +13,7 @@ class CommentPolicy
 
     public function before($user, $ability)
     {
-        if ($user->hasRole('admin')) {
+        if ($user->hasElevatedPermissions()) {
             return true;
         }
     }
@@ -30,7 +30,17 @@ class CommentPolicy
         }
 
         if ($comment->order_id) {
-            return $user->can('view', $comment->order);
+            $order = \App\Models\Order::find($comment->order_id);
+            if ($order) {
+                return $user->can('view', $order);
+            }
+        }
+
+        if ($comment->project_id) {
+            $project = \App\Models\Project::find($comment->project_id);
+            if ($project) {
+                return $user->can('view', $project);
+            }
         }
 
         return false;
@@ -43,6 +53,6 @@ class CommentPolicy
 
     public function delete(User $user, Comment $comment)
     {
-        return $user->id === $comment->user_id || $user->hasRole('admin');
+        return $user->id === $comment->user_id || $user->hasElevatedPermissions();
     }
 }

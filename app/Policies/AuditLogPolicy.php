@@ -4,104 +4,171 @@ namespace App\Policies;
 
 use App\Models\AuditLog;
 use App\Models\User;
-use Illuminate\Auth\Access\Response;
+use Illuminate\Auth\Access\HandlesAuthorization;
 
 class AuditLogPolicy
 {
+    use HandlesAuthorization;
+
     /**
      * Determine whether the user can view any models.
-     * Только администраторы могут просматривать список аудит-логов
      */
     public function viewAny(User $user): bool
     {
-        return $user->hasRole('admin');
+        return $user->hasElevatedPermissions();
     }
 
     /**
      * Determine whether the user can view the model.
-     * Только администраторы могут просматривать отдельные записи аудит-логов
      */
     public function view(User $user, AuditLog $auditLog): bool
     {
-        return $user->hasRole('admin');
+        return $user->hasElevatedPermissions();
     }
 
     /**
      * Determine whether the user can create models.
-     * Создание аудит-логов происходит автоматически через Observer
      */
     public function create(User $user): bool
     {
-        return false; // Запрещено создание вручную
+        // Only system can create audit logs
+        return false;
     }
 
     /**
      * Determine whether the user can update the model.
-     * Аудит-логи нельзя редактировать
      */
     public function update(User $user, AuditLog $auditLog): bool
     {
-        return false; // Запрещено редактирование
+        // Audit logs should not be updated
+        return false;
     }
 
     /**
      * Determine whether the user can delete the model.
-     * Удаление аудит-логов разрешено только администраторам
      */
     public function delete(User $user, AuditLog $auditLog): bool
     {
-        return $user->hasRole('admin');
+        return $user->isAdmin();
     }
 
     /**
      * Determine whether the user can restore the model.
-     * Восстановление аудит-логов разрешено только администраторам
      */
     public function restore(User $user, AuditLog $auditLog): bool
     {
-        return $user->hasRole('admin');
+        return $user->isAdmin();
     }
 
     /**
      * Determine whether the user can permanently delete the model.
-     * Полное удаление аудит-логов разрешено только администраторам
      */
     public function forceDelete(User $user, AuditLog $auditLog): bool
     {
-        return $user->hasRole('admin');
+        return $user->isAdmin();
     }
 
     /**
      * Determine whether the user can export audit logs.
-     * Экспорт аудит-логов разрешен только администраторам
      */
-    public function export(User $user): bool
+    public function exportAuditLogs(User $user): bool
+    {
+        return $user->isAdminOrManager();
+    }
+
+    /**
+     * Determine whether the user can view audit log analytics.
+     */
+    public function viewAuditLogAnalytics(User $user): bool
+    {
+        return $user->isAdminOrManager();
+    }
+
+    /**
+     * Determine whether the user can manage audit log settings.
+     */
+    public function manageAuditLogSettings(User $user): bool
     {
         return $user->hasRole('admin');
     }
 
     /**
-     * Determine whether the user can view audit statistics.
-     * Просмотр статистики аудит-логов разрешен только администраторам
+     * Determine whether the user can view audit log statistics.
      */
-    public function viewStats(User $user): bool
+    public function viewAuditLogStatistics(User $user): bool
     {
-        return $user->hasRole('admin');
+        return $user->hasAnyRole(['admin', 'manager']);
     }
 
     /**
-     * Determine whether the user can cleanup old audit logs.
-     * Очистка старых аудит-логов разрешена только администраторам
+     * Determine whether the user can access audit log management features.
      */
-    public function cleanup(User $user): bool
+    public function accessAuditLogManagement(User $user): bool
     {
-        return $user->hasRole('admin');
+        return $user->hasAnyRole(['admin', 'manager', 'power_user']);
     }
 
-    public function before($user, $ability)
+    /**
+     * Determine whether the user can view audit log history.
+     */
+    public function viewAuditLogHistory(User $user): bool
     {
+        return $user->hasAnyRole(['admin', 'manager', 'power_user']);
+    }
+
+    /**
+     * Determine whether the user can filter audit logs.
+     */
+    public function filterAuditLogs(User $user): bool
+    {
+        return $user->hasAnyRole(['admin', 'manager', 'power_user']);
+    }
+
+    /**
+     * Determine whether the user can search audit logs.
+     */
+    public function searchAuditLogs(User $user): bool
+    {
+        return $user->hasAnyRole(['admin', 'manager', 'power_user']);
+    }
+
+    /**
+     * Determine whether the user can view audit log details.
+     */
+    public function viewAuditLogDetails(User $user, AuditLog $auditLog): bool
+    {
+        // Admin can view all audit log details
         if ($user->hasRole('admin')) {
             return true;
         }
+
+        // Manager can view all audit log details
+        if ($user->hasRole('manager')) {
+            return true;
+        }
+
+        // Power user can view audit log details
+        if ($user->hasRole('power_user')) {
+            return true;
+        }
+
+        // Employees cannot view audit log details
+        return false;
+    }
+
+    /**
+     * Determine whether the user can manage audit log retention.
+     */
+    public function manageAuditLogRetention(User $user): bool
+    {
+        return $user->hasRole('admin');
+    }
+
+    /**
+     * Determine whether the user can view audit log reports.
+     */
+    public function viewAuditLogReports(User $user): bool
+    {
+        return $user->hasAnyRole(['admin', 'manager']);
     }
 }

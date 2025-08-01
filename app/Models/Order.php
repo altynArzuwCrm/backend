@@ -36,6 +36,24 @@ class Order extends Model
 
     protected static function booted()
     {
+        static::creating(function ($order) {
+            // Если stage_id не установлен, устанавливаем первую РАБОЧУЮ стадию
+            if (!$order->stage_id) {
+                $firstWorkingStage = \App\Models\Stage::ordered()
+                    ->whereHas('roles')
+                    ->first();
+                if ($firstWorkingStage) {
+                    $order->stage_id = $firstWorkingStage->id;
+                } else {
+                    // Fallback к первой стадии, если нет рабочих стадий
+                    $firstStage = \App\Models\Stage::where('order', 1)->first();
+                    if ($firstStage) {
+                        $order->stage_id = $firstStage->id;
+                    }
+                }
+            }
+        });
+
         static::created(function ($order) {
             if ($order->project) {
                 $order->project->recalculateTotalPrice();
@@ -126,67 +144,31 @@ class Order extends Model
 
     public function getNextStage()
     {
-        $currentStage = Stage::where('name', $this->stage)->first();
+        $stageName = is_string($this->stage) ? $this->stage : $this->stage->name ?? null;
+        if (!$stageName) {
+            return null;
+        }
+
+        $currentStage = Stage::where('name', $stageName)->first();
         if (!$currentStage) {
             return null;
         }
 
-        $nextStage = $currentStage->getNextStage();
-        if (!$nextStage) {
-            return null;
-        }
-
         $product = $this->product;
-        if (!$product) {
-            return $nextStage->name;
-        }
 
-        // Keep looking for next available stage if current one is not supported by product
+        // Ищем следующую стадию с неодобренными назначениями
+        $nextStage = $currentStage->getNextStage();
         while ($nextStage) {
             $stageName = $nextStage->name;
 
-            // Check if product supports this stage using new dynamic system
-            if (!$product->hasStage($stageName)) {
+            // Проверяем, поддерживает ли продукт эту стадию
+            if ($product && !$product->hasStage($stageName)) {
                 $nextStage = $nextStage->getNextStage();
                 continue;
             }
 
-            return $stageName;
-        }
-
-        // If no next stage found, return completed
-        $completedStage = Stage::where('name', 'completed')->first();
-        return $completedStage ? $completedStage->name : 'completed';
-    }
-
-    public function isCurrentStageApproved()
-    {
-        $stageName = $this->stage;
-        $product = $this->product;
-
-        $currentStage = Stage::with('roles')->where('name', $stageName)->first();
-        if (!$currentStage) {
-            return true; // Unknown stage, consider approved
-        }
-
-        // Get required roles for this stage
-        $requiredRoles = $currentStage->roles()
-            ->wherePivot('is_required', true)
-            ->get();
-
-        if ($requiredRoles->isEmpty()) {
-            return true; // No required roles, consider approved
-        }
-
-        // Check if product supports this stage using new dynamic system
-        if (!$product || !$product->hasStage($stageName)) {
-            return true; // Stage not supported by product, consider approved
-        }
-
-        // Check if all required roles have approved assignments
-        foreach ($requiredRoles as $role) {
-            $assignments = $this->assignments()
-                ->where('role_type', $role->name)
+            // Проверяем, есть ли назначения для этой стадии
+            $stageAssignments = $this->assignments()
                 ->whereHas('orderStageAssignments', function ($q) use ($stageName) {
                     $q->whereHas('stage', function ($sq) use ($stageName) {
                         $sq->where('name', $stageName);
@@ -194,63 +176,103 @@ class Order extends Model
                 })
                 ->get();
 
-            if ($assignments->isEmpty() || $assignments->every(fn($a) => $a->status !== 'approved')) {
-                return false; // Required role not approved
+            // Если есть назначения и хотя бы одно не одобрено - возвращаем эту стадию
+            if ($stageAssignments->isNotEmpty()) {
+                foreach ($stageAssignments as $assignment) {
+                    if ($assignment->status !== 'approved') {
+                        return $stageName; // Нашли стадию с неодобренными назначениями
+                    }
+                }
+            }
+
+            // Если нет назначений или все одобрены - ищем дальше
+            $nextStage = $nextStage->getNextStage();
+        }
+
+        // Если не нашли стадию с неодобренными назначениями - возвращаем completed
+        $completedStage = Stage::where('name', 'completed')->first();
+        return $completedStage ? $completedStage->name : 'completed';
+    }
+
+    public function isCurrentStageApproved()
+    {
+        $stageName = is_string($this->stage) ? $this->stage : $this->stage->name ?? null;
+        $product = $this->product;
+
+        if (!$stageName) {
+            return true; // No stage, consider approved
+        }
+
+        $currentStage = Stage::with('roles')->where('name', $stageName)->first();
+        if (!$currentStage) {
+            return true; // Unknown stage, consider approved
+        }
+
+        // Check if product supports this stage using new dynamic system
+        if (!$product || !$product->hasStage($stageName)) {
+            return true; // Stage not supported by product, consider approved
+        }
+
+        // Get ALL assignments for the current stage (not just required roles)
+        $stageAssignments = $this->assignments()
+            ->whereHas('orderStageAssignments', function ($q) use ($stageName) {
+                $q->whereHas('stage', function ($sq) use ($stageName) {
+                    $sq->where('name', $stageName);
+                });
+            })
+            ->get();
+
+        // If no assignments for this stage, consider it approved
+        if ($stageAssignments->isEmpty()) {
+            return true;
+        }
+
+        // Check if ALL assignments for this stage are approved
+        foreach ($stageAssignments as $assignment) {
+            if ($assignment->status !== 'approved') {
+                return false; // At least one assignment is not approved
             }
         }
 
-        return true;
+        return true; // All assignments are approved
     }
 
     public function moveToNextStage()
     {
         $nextStage = $this->getNextStage();
+        $currentStageName = is_string($this->stage) ? $this->stage : $this->stage->name ?? null;
 
-        if ($nextStage && $nextStage !== $this->stage) {
+        if ($nextStage && $nextStage !== $currentStageName) {
             if ($nextStage === 'completed') {
-                $currentStage = $this->stage;
                 $product = $this->product;
 
-                $roleMap = [
-                    'design' => ['has_design_stage', 'designer_id', 'designer'],
-                    'print' => ['has_print_stage', 'print_operator_id', 'print_operator'],
-                    'engraving' => ['has_engraving_stage', null, 'engraving_operator'],
-                    'workshop' => ['has_workshop_stage', 'workshop_worker_id', 'workshop_worker'],
-                ];
+                // Динамическая проверка ролей для текущей стадии
+                $currentStageModel = Stage::where('name', $currentStageName)->first();
+                if ($currentStageModel && $product) {
+                    $stageRoles = $currentStageModel->roles;
 
-                if (isset($roleMap[$currentStage])) {
-                    [$flag, $userField, $role] = $roleMap[$currentStage];
+                    foreach ($stageRoles as $role) {
+                        $assignments = $this->assignments()
+                            ->whereHas('user.roles', function ($q) use ($role) {
+                                $q->where('name', $role->name);
+                            })
+                            ->get();
 
-                    if ($product->$flag) {
-                        // Для engraving_operator_id проверяем только флаг, так как поля нет
-                        if ($userField && $product->$userField) {
-                            $assignments = $this->assignments()
-                                ->whereHas('user.roles', function ($q) use ($role) {
-                                    $q->where('name', $role);
-                                })
-                                ->get();
-
-                            if ($assignments->isNotEmpty() && !$assignments->every(fn($a) => $a->status === 'approved')) {
-                                return false;
-                            }
-                        } else {
-                            $assignments = $this->assignments()
-                                ->whereHas('user.roles', function ($q) use ($role) {
-                                    $q->where('name', $role);
-                                })
-                                ->get();
-
-                            if ($assignments->isNotEmpty() && !$assignments->every(fn($a) => $a->status === 'approved')) {
-                                return false;
-                            }
+                        if ($assignments->isNotEmpty() && !$assignments->every(fn($a) => $a->status === 'approved')) {
+                            return false;
                         }
                     }
                 }
             }
 
-            $oldStage = $this->stage;
-            $this->stage = $nextStage;
-            $this->save();
+            $oldStageName = is_string($this->stage) ? $this->stage : $this->stage->name ?? null;
+
+            // Находим ID следующей стадии
+            $nextStageModel = Stage::where('name', $nextStage)->first();
+            if ($nextStageModel) {
+                $this->stage_id = $nextStageModel->id;
+                $this->save();
+            }
 
             if ($nextStage === 'completed' || $nextStage === 'cancelled') {
                 $this->archive();
@@ -262,8 +284,8 @@ class Order extends Model
 
             OrderStatusLog::create([
                 'order_id' => $this->id,
-                'from_status' => $oldStage,
-                'to_status' => $this->stage,
+                'from_status' => $oldStageName,
+                'to_status' => $nextStage,
                 'user_id' => \Illuminate\Support\Facades\Auth::id() ?? 1,
                 'changed_at' => now(),
             ]);

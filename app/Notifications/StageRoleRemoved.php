@@ -3,26 +3,25 @@
 namespace App\Notifications;
 
 use App\Models\Order;
+use App\Models\Stage;
 use Illuminate\Bus\Queueable;
 use Illuminate\Notifications\Notification;
-use Illuminate\Notifications\Messages\BroadcastMessage;
-use Illuminate\Notifications\Messages\DatabaseMessage;
 
-class OrderAssigned extends Notification
+class StageRoleRemoved extends Notification
 {
     use Queueable;
 
     public $order;
-    public $actionUser;
-    public $roleType;
     public $stage;
+    public $roleType;
+    public $actionUser;
 
-    public function __construct(Order $order, $actionUser = null, $roleType = null, $stage = null)
+    public function __construct(Order $order, Stage $stage, $roleType, $actionUser = null)
     {
         $this->order = $order;
-        $this->actionUser = $actionUser;
-        $this->roleType = $roleType;
         $this->stage = $stage;
+        $this->roleType = $roleType;
+        $this->actionUser = $actionUser;
     }
 
     public function via($notifiable)
@@ -45,13 +44,15 @@ class OrderAssigned extends Notification
             'order_id' => $this->order->id,
             'project_id' => $this->order->project_id,
             'title' => $this->order->project?->title ?? 'Заказ #' . $this->order->id,
-            'action_user_id' => $actionUser ? $actionUser->id : null,
-            'action_user_name' => $actionUser ? ($actionUser->display_name ?? $actionUser->username ?? '') : '',
-            'action_user_role' => $actionUser ? $actionUser->role : null,
+            'stage_id' => $this->stage->id,
+            'stage_name' => $this->stage->name,
             'role_type' => $this->roleType,
-            'stage' => $this->stage,
-            'message' => 'Вам назначен новый заказ #' . $this->order->id . ' в роли "' . $roleDisplayName . '" пользователем ' . ($actionUser ? ($actionUser->display_name ?? $actionUser->username) : 'система'),
-            'assigned_at' => now(),
+            'action_user_id' => $actionUser->id,
+            'action_user_name' => $actionUser->display_name ?? $actionUser->username ?? '',
+            'action_user_role' => $actionUser->role,
+            'message' => 'Ваша роль "' . $roleDisplayName . '" на стадии "' . $this->stage->display_name . '" для заказа #' . $this->order->id . ' была удалена пользователем ' . ($actionUser->display_name ?? $actionUser->username),
+            'removed_at' => now(),
+            'icon' => 'stage_removal',
         ];
     }
 }

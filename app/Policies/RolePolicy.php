@@ -4,16 +4,18 @@ namespace App\Policies;
 
 use App\Models\Role;
 use App\Models\User;
-use Illuminate\Auth\Access\Response;
+use Illuminate\Auth\Access\HandlesAuthorization;
 
 class RolePolicy
 {
+    use HandlesAuthorization;
+
     /**
      * Determine whether the user can view any models.
      */
     public function viewAny(User $user): bool
     {
-        return $user->hasAnyRole(['admin', 'manager']);
+        return true; // Доступен всем авторизованным пользователям
     }
 
     /**
@@ -21,7 +23,22 @@ class RolePolicy
      */
     public function view(User $user, Role $role): bool
     {
-        return $user->hasAnyRole(['admin', 'manager']);
+        // Admin can view all roles
+        if ($user->hasRole('admin')) {
+            return true;
+        }
+
+        // Manager can view all roles except admin role
+        if ($user->hasRole('manager')) {
+            return $role->name !== 'admin';
+        }
+
+        // Power user can view all roles except admin and manager roles
+        if ($user->hasRole('power_user')) {
+            return !in_array($role->name, ['admin', 'manager']);
+        }
+
+        return false;
     }
 
     /**
@@ -29,7 +46,7 @@ class RolePolicy
      */
     public function create(User $user): bool
     {
-        return $user->hasRole('admin');
+        return $user->isAdminOrManager();
     }
 
     /**
@@ -37,7 +54,17 @@ class RolePolicy
      */
     public function update(User $user, Role $role): bool
     {
-        return $user->hasRole('admin');
+        // Admin can update all roles
+        if ($user->hasRole('admin')) {
+            return true;
+        }
+
+        // Manager can update roles except admin role
+        if ($user->hasRole('manager')) {
+            return $role->name !== 'admin';
+        }
+
+        return false;
     }
 
     /**
@@ -45,7 +72,17 @@ class RolePolicy
      */
     public function delete(User $user, Role $role): bool
     {
-        return $user->hasRole('admin');
+        // Admin can delete all roles except their own
+        if ($user->hasRole('admin')) {
+            return $role->name !== 'admin';
+        }
+
+        // Manager can delete roles except admin and manager roles
+        if ($user->hasRole('manager')) {
+            return !in_array($role->name, ['admin', 'manager']);
+        }
+
+        return false;
     }
 
     /**
@@ -53,7 +90,7 @@ class RolePolicy
      */
     public function restore(User $user, Role $role): bool
     {
-        return $user->hasRole('admin');
+        return $user->isAdminOrManager();
     }
 
     /**
@@ -62,5 +99,141 @@ class RolePolicy
     public function forceDelete(User $user, Role $role): bool
     {
         return $user->hasRole('admin');
+    }
+
+    /**
+     * Determine whether the user can assign roles.
+     */
+    public function assignRoles(User $user): bool
+    {
+        return $user->hasAnyRole(['admin', 'manager']);
+    }
+
+    /**
+     * Determine whether the user can manage role permissions.
+     */
+    public function manageRolePermissions(User $user): bool
+    {
+        return $user->hasAnyRole(['admin', 'manager']);
+    }
+
+    /**
+     * Determine whether the user can view role statistics.
+     */
+    public function viewRoleStatistics(User $user): bool
+    {
+        return $user->hasAnyRole(['admin', 'manager', 'power_user']);
+    }
+
+    /**
+     * Determine whether the user can export roles.
+     */
+    public function exportRoles(User $user): bool
+    {
+        return $user->hasAnyRole(['admin', 'manager', 'power_user']);
+    }
+
+    /**
+     * Determine whether the user can view role analytics.
+     */
+    public function viewRoleAnalytics(User $user): bool
+    {
+        return $user->hasAnyRole(['admin', 'manager', 'power_user']);
+    }
+
+    /**
+     * Determine whether the user can manage role colors.
+     */
+    public function manageRoleColors(User $user): bool
+    {
+        return $user->hasAnyRole(['admin', 'manager']);
+    }
+
+    /**
+     * Determine whether the user can access role management features.
+     */
+    public function accessRoleManagement(User $user): bool
+    {
+        return $user->hasAnyRole(['admin', 'manager', 'power_user']);
+    }
+
+    /**
+     * Determine whether the user can view role history.
+     */
+    public function viewRoleHistory(User $user, Role $role): bool
+    {
+        // Admin can view all role history
+        if ($user->hasRole('admin')) {
+            return true;
+        }
+
+        // Manager can view role history except admin role
+        if ($user->hasRole('manager')) {
+            return $role->name !== 'admin';
+        }
+
+        // Power user can view role history except admin and manager roles
+        if ($user->hasRole('power_user')) {
+            return !in_array($role->name, ['admin', 'manager']);
+        }
+
+        return false;
+    }
+
+    /**
+     * Determine whether the user can manage role users.
+     */
+    public function manageRoleUsers(User $user, Role $role): bool
+    {
+        // Admin can manage users for all roles
+        if ($user->hasRole('admin')) {
+            return true;
+        }
+
+        // Manager can manage users for roles except admin role
+        if ($user->hasRole('manager')) {
+            return $role->name !== 'admin';
+        }
+
+        return false;
+    }
+
+    /**
+     * Determine whether the user can view role users.
+     */
+    public function viewRoleUsers(User $user, Role $role): bool
+    {
+        // Admin can view users for all roles
+        if ($user->hasRole('admin')) {
+            return true;
+        }
+
+        // Manager can view users for roles except admin role
+        if ($user->hasRole('manager')) {
+            return $role->name !== 'admin';
+        }
+
+        // Power user can view users for roles except admin and manager roles
+        if ($user->hasRole('power_user')) {
+            return !in_array($role->name, ['admin', 'manager']);
+        }
+
+        return false;
+    }
+
+    /**
+     * Determine whether the user can manage role hierarchy.
+     */
+    public function manageRoleHierarchy(User $user): bool
+    {
+        return $user->hasAnyRole(['admin', 'manager']);
+    }
+
+    /**
+     * Determine whether the user can manage role inheritance.
+     */
+    public function manageRoleInheritance(User $user): bool
+    {
+        return $user->hasAnyRole(['admin', 'manager']);
     }
 }

@@ -25,6 +25,13 @@ class ProductResource extends JsonResource
                     'display_name' => $stage->display_name,
                     'color' => $stage->color,
                     'is_default' => $stage->pivot->is_default ?? false,
+                    'roles' => $stage->roles->map(function ($role) {
+                        return [
+                            'id' => $role->id,
+                            'name' => $role->name,
+                            'display_name' => $role->display_name,
+                        ];
+                    }),
                 ];
             }),
             'designers' => UserResource::collection($this->getDesigners()),
