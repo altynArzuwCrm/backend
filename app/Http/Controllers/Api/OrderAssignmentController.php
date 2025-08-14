@@ -86,12 +86,7 @@ class OrderAssignmentController extends Controller
         }
         $product = $order->product;
         $roleType = $data['role_type'] ?? $user->roles()->whereIn('name', $availableRoles)->first()?->name;
-        \Log::info('Creating order assignment', [
-            'order_id' => $order->id,
-            'user_id' => $user->id,
-            'assigned_by' => Auth::user()->id,
-            'role_type' => $roleType,
-        ]);
+
 
         $assignment = OrderAssignment::create([
             'order_id' => $order->id,
@@ -100,13 +95,8 @@ class OrderAssignmentController extends Controller
             'role_type' => $roleType,
         ]);
 
-        \Log::info('Order assignment created', [
-            'assignment_id' => $assignment->id,
-            'order_id' => $order->id,
-            'user_id' => $user->id,
-        ]);
 
-        // Handle stage assignments with new system
+
         if ($product) {
             $productStages = $product->getAvailableStages();
             foreach ($productStages as $stage) {
@@ -114,20 +104,8 @@ class OrderAssignmentController extends Controller
             }
         }
 
-        \Log::info('Sending OrderAssigned notification', [
-            'user_id' => $user->id,
-            'user_name' => $user->name,
-            'order_id' => $order->id,
-            'assignment_id' => $assignment->id,
-            'assigned_by' => Auth::user()->id
-        ]);
-
         try {
             $user->notify(new OrderAssigned($order, Auth::user()));
-            \Log::info('OrderAssigned notification sent successfully', [
-                'user_id' => $user->id,
-                'order_id' => $order->id
-            ]);
         } catch (\Exception $e) {
             \Log::error('Failed to send OrderAssigned notification', [
                 'user_id' => $user->id,
@@ -465,13 +443,6 @@ class OrderAssignmentController extends Controller
 
         $oldStatus = $assignment->status;
         $assignment->status = $request->status;
-        // Динамическое обновление полей стадий (если они есть в модели)
-        $stageFields = ['has_design_stage', 'has_print_stage', 'has_engraving_stage', 'has_workshop_stage'];
-        foreach ($stageFields as $stageField) {
-            if ($request->has($stageField) && property_exists($assignment, $stageField)) {
-                $assignment->$stageField = $request->boolean($stageField);
-            }
-        }
         $assignment->save();
 
         if ($oldStatus !== $assignment->status) {
@@ -536,19 +507,7 @@ class OrderAssignmentController extends Controller
             'assigned_stages' => 'sometimes|array',
             'assigned_stages.*' => 'string|exists:stages,name',
         ]);
-        // Динамическое обновление полей стадий
-        $updateData = [];
-        $stageFields = ['has_design_stage', 'has_print_stage', 'has_engraving_stage', 'has_workshop_stage'];
 
-        foreach ($stageFields as $stageField) {
-            if ($request->has($stageField) && property_exists($assignment, $stageField)) {
-                $updateData[$stageField] = $request->input($stageField, $assignment->$stageField);
-            }
-        }
-
-        if (!empty($updateData)) {
-            $assignment->update($updateData);
-        }
         return response()->json([
             'message' => 'Назначение обновлено',
             'assignment' => $assignment,

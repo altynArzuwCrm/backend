@@ -27,17 +27,11 @@ class UserController extends Controller
     {
         $user = Auth::user();
 
-        \Log::info('UserController@index - User access check', [
-            'user_id' => $user->id,
-            'user_roles' => $user->roles->pluck('name')->toArray(),
-            'user_has_elevated_permissions' => $user->hasElevatedPermissions(),
-            'user_is_staff' => $user->isStaff()
-        ]);
+
 
         // Разрешаем доступ всем аутентифицированным пользователям для получения списка пользователей
         // так как эта информация нужна для назначения задач
         if (!$user) {
-            \Log::warning('UserController@index - Unauthenticated access attempt');
             abort(401, 'Необходима аутентификация');
         }
 
@@ -74,10 +68,7 @@ class UserController extends Controller
         $perPage = $request->get('per_page', 30);
         $users = $query->with('roles')->paginate($perPage);
 
-        \Log::info('UserController@index - Users loaded successfully', [
-            'user_id' => $user->id,
-            'users_count' => $users->count()
-        ]);
+
 
         return response()->json([
             'data' => $users->items(),

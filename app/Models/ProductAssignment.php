@@ -49,4 +49,3 @@ class ProductAssignment extends Model
             ->first();
     }
 }
- 

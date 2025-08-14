@@ -16,9 +16,9 @@ class ActivityController extends Controller
     public function index(Request $request)
     {
         $limit = $request->get('limit', 20);
-                    
+
         $activities = collect();
-        
+
         $newUsers = User::where('created_at', '>=', Carbon::now()->subDays(7))
             ->orderBy('created_at', 'desc')
             ->limit(10)
@@ -35,7 +35,7 @@ class ActivityController extends Controller
                     'color' => 'blue'
                 ];
             });
-        
+
         $newOrders = Order::where('created_at', '>=', Carbon::now()->subDays(7))
             ->with(['project', 'client'])
             ->orderBy('created_at', 'desc')
@@ -44,23 +44,17 @@ class ActivityController extends Controller
             ->map(function ($order) {
                 $clientName = 'Неизвестный клиент';
                 $amount = 0;
-                
+
                 if ($order->client) {
                     $clientName = $order->client->name;
                 } elseif ($order->project && $order->project->client) {
                     $clientName = $order->project->client->name;
-                } else {
-                    Log::warning('Order without client', [
-                        'order_id' => $order->id,
-                        'project_id' => $order->project_id,
-                        'client_id' => $order->client_id
-                    ]);
                 }
-                
+
                 if ($order->project) {
                     $amount = $order->project->total_price ?? 0;
                 }
-                
+
                 return [
                     'id' => 'order_' . $order->id,
                     'type' => 'order_created',
@@ -73,7 +67,7 @@ class ActivityController extends Controller
                     'amount' => $amount
                 ];
             });
-        
+
         $newClients = Client::where('created_at', '>=', Carbon::now()->subDays(7))
             ->orderBy('created_at', 'desc')
             ->limit(10)
@@ -101,14 +95,8 @@ class ActivityController extends Controller
                 $orderTitle = 'Неизвестный заказ';
                 if ($log->order) {
                     $orderTitle = $log->order->title ?? "Заказ #{$log->order->id}";
-                } else {
-                    Log::warning('AuditLog without order', [
-                        'audit_log_id' => $log->id,
-                        'order_id' => $log->order_id,
-                        'change_type' => $log->change_type
-                    ]);
                 }
-                
+
                 return [
                     'id' => 'status_' . $log->id,
                     'type' => 'status_change',
@@ -120,7 +108,7 @@ class ActivityController extends Controller
                     'color' => 'orange'
                 ];
             });
-        
+
         $activities = $activities
             ->merge($newUsers)
             ->merge($newOrders)
@@ -129,19 +117,19 @@ class ActivityController extends Controller
             ->sortByDesc('timestamp')
             ->take($limit)
             ->values();
-        
+
         return response()->json([
             'activities' => $activities,
             'total' => $activities->count()
         ]);
     }
-    
+
     public function recent(Request $request)
     {
         $limit = $request->get('limit', 10);
-        
+
         $recentActivities = collect();
-        
+
         $recentUsers = User::orderBy('created_at', 'desc')
             ->limit(5)
             ->get()
@@ -155,14 +143,14 @@ class ActivityController extends Controller
                     'iconBg' => 'bg-blue-500 bg-opacity-20'
                 ];
             });
-        
+
         $recentOrders = Order::with(['project', 'client', 'product'])
             ->orderBy('created_at', 'desc')
             ->limit(5)
             ->get()
             ->map(function ($order) {
                 $orderTitle = $order->display_name ?? "Заказ #{$order->id}";
-                
+
                 return [
                     'id' => 'order_' . $order->id,
                     'title' => "Новый заказ: {$orderTitle}",
@@ -172,7 +160,7 @@ class ActivityController extends Controller
                     'iconBg' => 'bg-green-500 bg-opacity-20'
                 ];
             });
-        
+
         $recentClients = Client::orderBy('created_at', 'desc')
             ->limit(5)
             ->get()
@@ -186,7 +174,7 @@ class ActivityController extends Controller
                     'iconBg' => 'bg-purple-500 bg-opacity-20'
                 ];
             });
-        
+
         $auditEvents = AuditLog::with(['auditable' => function ($query) {
             if ($query->getModel() instanceof \App\Models\Order) {
                 $query->with(['product', 'client']);
@@ -199,7 +187,7 @@ class ActivityController extends Controller
                 $title = '';
                 $icon = 'DocumentIcon';
                 $iconBg = 'bg-orange-500 bg-opacity-20';
-                
+
                 $entityName = 'неизвестной сущности';
                 if ($log->auditable) {
                     if ($log->auditable_type === 'App\Models\Order') {
@@ -228,7 +216,7 @@ class ActivityController extends Controller
                         $title = "Действие {$log->action} с {$log->model_name}: {$entityName}";
                         break;
                 }
-                
+
                 return [
                     'id' => 'audit_' . $log->id,
                     'title' => $title,
@@ -238,7 +226,7 @@ class ActivityController extends Controller
                     'iconBg' => $iconBg
                 ];
             });
-        
+
         $recentActivities = $recentActivities
             ->merge($recentUsers)
             ->merge($recentOrders)
@@ -247,7 +235,7 @@ class ActivityController extends Controller
             ->sortByDesc('timestamp')
             ->take($limit)
             ->values();
-        
+
         return response()->json($recentActivities);
     }
-} 
+}

@@ -11,8 +11,8 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::table('product_assignments', function (Blueprint $table) {
-            $table->string('role_type', 50)->change(); // Увеличиваем с 20 до 50 символов
+        Schema::table('products', function (Blueprint $table) {
+            //
         });
     }
 
@@ -21,8 +21,8 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::table('product_assignments', function (Blueprint $table) {
-            $table->string('role_type', 20)->change(); // Возвращаем к исходному размеру
+        Schema::table('products', function (Blueprint $table) {
+            //
         });
     }
 };

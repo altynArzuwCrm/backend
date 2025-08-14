@@ -155,7 +155,9 @@ class ProductAssignmentController extends Controller
                 ]);
                 $newAssignmentsMap->forget($key);
             } else {
-                $assignment->update(['is_active' => false]);
+                // Было: $assignment->update(['is_active' => false]);
+                // Стало: физическое удаление
+                $assignment->delete();
             }
         }
 

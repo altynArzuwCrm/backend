@@ -61,6 +61,11 @@ Route::middleware(['auth:sanctum', 'handle.null.relations'])->group(function () 
     });
 
     Route::get('clients/all', [ClientController::class, 'allClients']);
+
+    // Companies API endpoints
+    Route::get('clients/companies', [ClientController::class, 'getCompanies']);
+    Route::get('clients/company/{companyName}', [ClientController::class, 'getClientsByCompany']);
+
     Route::apiResource('clients', ClientController::class);
     Route::prefix('clients/{client}')->group(function () {
         Route::apiResource('contacts', ClientContactController::class)->except(['create', 'edit']);

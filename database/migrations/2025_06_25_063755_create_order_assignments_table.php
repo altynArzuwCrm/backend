@@ -22,10 +22,6 @@ return new class extends Migration
             $table->timestamp('cancelled_at')->nullable();
             $table->timestamp('approved_at')->nullable();
             $table->foreignId('assigned_by')->nullable()->constrained('users')->nullOnDelete();
-            $table->boolean('has_design_stage')->default(false);
-            $table->boolean('has_print_stage')->default(false);
-            $table->boolean('has_engraving_stage')->default(false);
-            $table->boolean('has_workshop_stage')->default(false);
             $table->string('role_type')->nullable();
             $table->timestamps();
             $table->softDeletes();

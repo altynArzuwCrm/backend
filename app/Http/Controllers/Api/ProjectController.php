@@ -67,34 +67,12 @@ class ProjectController extends Controller
     {
         try {
             $user = $request->user();
-            \Log::info('ProjectController@show - User access check', [
-                'user_id' => $user->id,
-                'user_roles' => $user->roles->pluck('name')->toArray(),
-                'project_id' => $project->id,
-                'user_has_elevated_permissions' => $user->hasElevatedPermissions(),
-                'user_is_staff' => $user->isStaff()
-            ]);
 
             if (Gate::denies('view', $project)) {
-                \Log::warning('ProjectController@show - Access denied', [
-                    'user_id' => $user->id,
-                    'project_id' => $project->id
-                ]);
                 abort(403, 'Доступ запрещён');
             }
 
-            \Log::info('ProjectController@show - Access granted, loading project data', [
-                'user_id' => $user->id,
-                'project_id' => $project->id
-            ]);
-
             $project->load(['orders.product', 'orders.client']);
-
-            \Log::info('ProjectController@show - Project data loaded successfully', [
-                'user_id' => $user->id,
-                'project_id' => $project->id,
-                'orders_count' => $project->orders->count()
-            ]);
 
             return response()->json($project);
         } catch (\Exception $e) {
@@ -135,11 +113,7 @@ class ProjectController extends Controller
                 'payment_amount' => $request->payment_amount ?? 0,
             ]);
 
-            \Log::info('Creating project with orders', [
-                'project_title' => $request->title,
-                'orders_count' => count($request->orders),
-                'orders_data' => $request->orders
-            ]);
+
 
             $orders = [];
             foreach ($request->orders as $orderData) {

@@ -24,47 +24,21 @@ class CommentController extends Controller
         $orderId = $request->query('order_id');
         $projectId = $request->query('project_id');
 
-        \Log::info('CommentController@index - User access check', [
-            'user_id' => $user->id,
-            'user_roles' => $user->roles->pluck('name')->toArray(),
-            'order_id' => $orderId,
-            'project_id' => $projectId
-        ]);
+
 
         if ($orderId) {
             $order = Order::findOrFail($orderId);
             if (Gate::denies('view', $order)) {
-                \Log::warning('CommentController@index - Access denied for order', [
-                    'user_id' => $user->id,
-                    'order_id' => $orderId
-                ]);
                 return response()->json(['error' => 'Доступ запрещён'], 403);
             }
             $comments = $order->comments()->with('user.roles')->get();
-            \Log::info('CommentController@index - Comments loaded for order', [
-                'user_id' => $user->id,
-                'order_id' => $orderId,
-                'comments_count' => $comments->count()
-            ]);
         } elseif ($projectId) {
             $project = Project::findOrFail($projectId);
             if (Gate::denies('view', $project)) {
-                \Log::warning('CommentController@index - Access denied for project', [
-                    'user_id' => $user->id,
-                    'project_id' => $projectId
-                ]);
                 return response()->json(['error' => 'Доступ запрещён'], 403);
             }
             $comments = $project->comments()->with('user.roles')->get();
-            \Log::info('CommentController@index - Comments loaded for project', [
-                'user_id' => $user->id,
-                'project_id' => $projectId,
-                'comments_count' => $comments->count()
-            ]);
         } else {
-            \Log::warning('CommentController@index - Missing order_id or project_id', [
-                'user_id' => $user->id
-            ]);
             return response()->json(['error' => 'order_id или project_id обязателен'], 402);
         }
 

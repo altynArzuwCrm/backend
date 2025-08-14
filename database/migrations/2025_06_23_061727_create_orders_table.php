@@ -20,11 +20,10 @@ return new class extends Migration
             $table->unsignedInteger('quantity')->default(1);
             $table->timestamp('deadline')->nullable();
             $table->decimal('price', 10, 2)->nullable();
-            $table->enum('stage', ['draft', 'design', 'print', 'workshop', 'final', 'completed', 'cancelled'])->default('draft');
             $table->text('reason')->nullable();
             $table->enum('reason_status', ReasonStatus::values())->nullable();
             $table->timestamp('archived_at')->nullable();
-            $table->boolean('is_archived')->default(false);
+            $table->boolean('is_archived')->default(false)->nullable();
             $table->timestamps();
         });
     }

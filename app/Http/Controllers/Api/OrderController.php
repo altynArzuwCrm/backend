@@ -84,15 +84,6 @@ class OrderController extends Controller
 
         $result = $query->paginate($perPage);
 
-        // Отладочная информация
-        \Log::info('Orders API response', [
-            'total_orders' => $result->total(),
-            'per_page' => $perPage,
-            'first_order_stage' => $result->first() ? $result->first()->stage : null,
-            'orders_with_stages' => $result->filter(fn($order) => $order->stage)->count(),
-            'orders_without_stages' => $result->filter(fn($order) => !$order->stage)->count(),
-        ]);
-
         return response()->json($result);
     }
 
@@ -101,40 +92,11 @@ class OrderController extends Controller
         $user = request()->user();
 
         // Логируем информацию о пользователе и заказе
-        \Log::info('OrderController@show - User access check', [
-            'user_id' => $user->id,
-            'user_roles' => $user->roles->pluck('name')->toArray(),
-            'order_id' => $order->id,
-            'order_assignments_count' => $order->assignments()->count(),
-            'user_has_elevated_permissions' => $user->hasElevatedPermissions(),
-            'user_is_staff' => $user->isStaff(),
-            'user_has_assignment' => $order->assignments()->where('user_id', $user->id)->exists()
-        ]);
-
         if (Gate::denies('view', $order)) {
-            \Log::warning('OrderController@show - Access denied', [
-                'user_id' => $user->id,
-                'order_id' => $order->id
-            ]);
             abort(403, 'Доступ запрещён');
         }
 
-        \Log::info('OrderController@show - Access granted, loading order data', [
-            'user_id' => $user->id,
-            'order_id' => $order->id
-        ]);
-
-        $order->load(['project', 'product', 'client', 'stage', 'assignments.user.roles', 'assignments.assignedStages']);
-
-        \Log::info('OrderController@show - Order data loaded successfully', [
-            'user_id' => $user->id,
-            'order_id' => $order->id,
-            'has_project' => !is_null($order->project),
-            'has_product' => !is_null($order->product),
-            'has_client' => !is_null($order->client),
-            'has_stage' => !is_null($order->stage),
-            'assignments_count' => $order->assignments->count()
-        ]);
+        $order->load(['project', 'product', 'client.contacts', 'stage', 'assignments.user.roles', 'assignments.assignedStages']);
 
         return response()->json($order);
     }
@@ -168,7 +130,6 @@ class OrderController extends Controller
         }
         // Get the first available stage for this product
         $availableStages = $product ? $product->getAvailableStages() : \App\Models\Stage::ordered()->get();
-        \Log::info('Available stages for order', ['stages' => $availableStages->pluck('name', 'order')->toArray()]);
 
         // Определяем начальную стадию на основе назначений
         $initialStage = null;
@@ -218,10 +179,7 @@ class OrderController extends Controller
                 ->orderBy('stages.order')
                 ->get();
 
-            \Log::info('Stages with assignments for product', [
-                'product_id' => $data['product_id'],
-                'stages_with_assignments' => $stagesWithAssignments->pluck('name', 'order')->toArray()
-            ]);
+
 
             $initialStage = $stagesWithAssignments->first();
         }
@@ -242,22 +200,13 @@ class OrderController extends Controller
 
         $data['stage'] = $initialStage ? $initialStage->name : 'draft';
 
-        \Log::info('Setting initial stage', [
-            'initial_stage' => $data['stage'],
-            'found_stage' => $initialStage ? $initialStage->name : 'not found',
-            'is_working_stage' => $initialStage ? true : false,
-            'fallback' => 'draft'
-        ]);
+
 
         // Преобразуем название стадии в stage_id
         if (isset($data['stage'])) {
             $stage = \App\Models\Stage::where('name', $data['stage'])->first();
             if ($stage) {
                 $data['stage_id'] = $stage->id;
-                \Log::info('Converted stage name to stage_id', [
-                    'stage_name' => $data['stage'],
-                    'stage_id' => $stage->id
-                ]);
             } else {
                 \Log::error('Stage not found', ['stage_name' => $data['stage']]);
             }

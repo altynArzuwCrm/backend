@@ -22,8 +22,7 @@ return new class extends Migration
             $table->unique(['order_assignment_id', 'stage_id']);
         });
 
-        // Migrate existing has_*_stage data from order_assignments
-        $this->migrateExistingAssignmentStageData();
+        // No migration needed since we're removing the old stage fields
     }
 
     /**
@@ -32,33 +31,5 @@ return new class extends Migration
     public function down(): void
     {
         Schema::dropIfExists('order_stage_assignments');
-    }
-
-    private function migrateExistingAssignmentStageData()
-    {
-        $stageMap = [
-            'design' => 'has_design_stage',
-            'print' => 'has_print_stage',
-            'engraving' => 'has_engraving_stage',
-            'workshop' => 'has_workshop_stage'
-        ];
-
-        $assignments = DB::table('order_assignments')->get();
-        $stages = DB::table('stages')->whereIn('name', array_keys($stageMap))->get()->keyBy('name');
-
-        foreach ($assignments as $assignment) {
-            foreach ($stageMap as $stageName => $hasField) {
-                $stage = $stages->get($stageName);
-                if ($stage && $assignment->$hasField) {
-                    DB::table('order_stage_assignments')->insert([
-                        'order_assignment_id' => $assignment->id,
-                        'stage_id' => $stage->id,
-                        'is_assigned' => true,
-                        'created_at' => now(),
-                        'updated_at' => now(),
-                    ]);
-                }
-            }
-        }
     }
 };

@@ -77,30 +77,23 @@ class BasicMultipleAssignmentsTest extends TestCase
         // Создаем продукт
         $product = Product::create([
             'name' => 'Тестовый продукт',
-            'has_design_stage' => true,
-            'has_print_stage' => true,
-            'has_workshop_stage' => true,
         ]);
 
         // Создаем назначения
         $assignment1 = $product->assignments()->create([
             'user_id' => $designer1->id,
             'role_type' => 'designer',
-            'priority' => 1,
             'is_active' => true
         ]);
 
         $assignment2 = $product->assignments()->create([
             'user_id' => $designer2->id,
             'role_type' => 'designer',
-            'priority' => 2,
             'is_active' => true
         ]);
 
         // Проверяем
         $this->assertEquals(2, $product->designerAssignments()->count());
-        $this->assertEquals(1, $assignment1->priority);
-        $this->assertEquals(2, $assignment2->priority);
 
         // Проверяем методы продукта
         $designers = $product->getDesigners();
@@ -134,7 +127,6 @@ class BasicMultipleAssignmentsTest extends TestCase
         // Создаем продукт
         $product = Product::create([
             'name' => 'Тестовый продукт',
-            'has_design_stage' => true,
         ]);
 
         // Создаем назначения
@@ -142,13 +134,11 @@ class BasicMultipleAssignmentsTest extends TestCase
             [
                 'user_id' => $designer1->id,
                 'role_type' => 'designer',
-                'priority' => 1,
                 'is_active' => true
             ],
             [
                 'user_id' => $designer2->id,
                 'role_type' => 'designer',
-                'priority' => 2,
                 'is_active' => true
             ]
         ]);

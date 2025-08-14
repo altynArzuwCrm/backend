@@ -84,6 +84,9 @@ class ClientController extends Controller
         if (Gate::denies('view', $client)) {
             abort(403, 'Доступ запрещён');
         }
+
+        // Загружаем контакты клиента
+        $client->load('contacts');
         return response()->json($client);
     }
 
@@ -93,13 +96,31 @@ class ClientController extends Controller
             abort(403, 'Доступ запрещён');
         }
 
-        $data =  $request->validate([
-            'name' =>  'required|string|max:255',
+        $data = $request->validate([
+            'name' => 'required|string|max:255',
             'company_name' => 'nullable|string|max:225',
+            'contacts' => 'nullable|array',
+            'contacts.*.type' => 'required_with:contacts|in:phone,email,telegram,whatsapp,instagram,other',
+            'contacts.*.value' => 'required_with:contacts|string|max:255',
         ]);
 
-        $client = Client::create($data);
+        $client = Client::create([
+            'name' => $data['name'],
+            'company_name' => $data['company_name'] ?? null,
+        ]);
 
+        // Создаем контакты, если они переданы
+        if (!empty($data['contacts'])) {
+            foreach ($data['contacts'] as $contactData) {
+                $client->contacts()->create([
+                    'type' => $contactData['type'],
+                    'value' => $contactData['value'],
+                ]);
+            }
+        }
+
+        // Возвращаем клиента с контактами
+        $client->load('contacts');
         return response()->json(['data' => $client], 201);
     }
 
@@ -108,14 +129,70 @@ class ClientController extends Controller
         if (Gate::denies('update', $client)) {
             abort(403, 'Доступ запрещён');
         }
+
         $data = $request->validate([
             'name' => 'sometimes|string|max:255',
             'company_name' => 'nullable|string|max:255',
+            'contacts' => 'nullable|array',
+            'contacts.*.type' => 'required_with:contacts|in:phone,email,telegram,whatsapp,instagram,other',
+            'contacts.*.value' => 'required_with:contacts|string|max:255',
         ]);
 
-        $client->update($data);
+        // Обновляем основные данные клиента
+        $client->update([
+            'name' => $data['name'] ?? $client->name,
+            'company_name' => $data['company_name'] ?? $client->company_name,
+        ]);
 
+        // Обновляем контакты, если они переданы
+        if (isset($data['contacts'])) {
+            // Удаляем старые контакты
+            $client->contacts()->delete();
+
+            // Создаем новые контакты
+            if (!empty($data['contacts'])) {
+                foreach ($data['contacts'] as $contactData) {
+                    $client->contacts()->create([
+                        'type' => $contactData['type'],
+                        'value' => $contactData['value'],
+                    ]);
+                }
+            }
+        }
+
+        // Возвращаем клиента с обновленными контактами
+        $client->load('contacts');
         return response()->json($client);
+    }
+
+    public function getCompanies()
+    {
+        if (Gate::denies('viewAny', Client::class)) {
+            abort(403, 'Доступ запрещён');
+        }
+
+        $companies = Client::select('company_name')
+            ->whereNotNull('company_name')
+            ->where('company_name', '!=', '')
+            ->distinct()
+            ->orderBy('company_name')
+            ->pluck('company_name');
+
+        return response()->json($companies);
+    }
+
+    public function getClientsByCompany($companyName)
+    {
+        if (Gate::denies('viewAny', Client::class)) {
+            abort(403, 'Доступ запрещён');
+        }
+
+        $clients = Client::where('company_name', $companyName)
+            ->with('contacts')
+            ->orderBy('name')
+            ->get();
+
+        return response()->json($clients);
     }
 
     public function destroy(Client $client)
@@ -124,7 +201,6 @@ class ClientController extends Controller
             abort(403, 'Доступ запрещён');
         }
 
-        // Проверяем активные заказы клиента
         $activeOrdersCount = $client->orders()->where('is_archived', false)->count();
 
         if ($activeOrdersCount > 0) {

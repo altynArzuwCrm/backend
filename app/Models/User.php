@@ -76,7 +76,9 @@ class User extends Authenticatable
      */
     public function isPowerUser(): bool
     {
-        return $this->hasRole('power_user');
+        // Power user теперь означает любого сотрудника с расширенными правами
+        // Это может быть designer, print_operator, workshop_worker и т.д.
+        return $this->hasAnyRole(['designer', 'print_operator', 'workshop_worker', 'engraving_operator', 'bukhgalter']);
     }
 
     /**
@@ -94,11 +96,11 @@ class User extends Authenticatable
     }
 
     /**
-     * Check if user has elevated permissions (admin, manager, or power user)
+     * Check if user has elevated permissions (admin, manager, or any specialist role)
      */
     public function hasElevatedPermissions(): bool
     {
-        return $this->hasAnyRole(['admin', 'manager', 'power_user']);
+        return $this->hasAnyRole(['admin', 'manager', 'designer', 'print_operator', 'workshop_worker', 'engraving_operator', 'bukhgalter']);
     }
 
     /**
@@ -122,7 +124,7 @@ class User extends Authenticatable
      */
     public function canAccessAuditLogs(): bool
     {
-        return $this->hasAnyRole(['admin', 'manager', 'power_user']);
+        return $this->hasAnyRole(['admin', 'manager']);
     }
 
     /**
@@ -130,7 +132,7 @@ class User extends Authenticatable
      */
     public function canManageUsers(): bool
     {
-        return $this->hasAnyRole(['admin', 'manager', 'power_user']);
+        return $this->hasAnyRole(['admin', 'manager']);
     }
 
     /**
@@ -154,7 +156,7 @@ class User extends Authenticatable
      */
     public function canPerformBulkOperations(): bool
     {
-        return $this->hasAnyRole(['admin', 'manager', 'power_user']);
+        return $this->hasAnyRole(['admin', 'manager']);
     }
 
     /**
@@ -162,7 +164,7 @@ class User extends Authenticatable
      */
     public function canExportData(): bool
     {
-        return $this->hasAnyRole(['admin', 'manager', 'power_user']);
+        return $this->hasAnyRole(['admin', 'manager']);
     }
 
     /**
@@ -170,7 +172,7 @@ class User extends Authenticatable
      */
     public function canViewAnalytics(): bool
     {
-        return $this->hasAnyRole(['admin', 'manager', 'power_user']);
+        return $this->hasAnyRole(['admin', 'manager']);
     }
 
     /**
@@ -178,7 +180,7 @@ class User extends Authenticatable
      */
     public function canViewAllData(): bool
     {
-        return $this->hasAnyRole(['admin', 'manager', 'power_user']);
+        return $this->hasAnyRole(['admin', 'manager']);
     }
 
     /**
@@ -186,7 +188,7 @@ class User extends Authenticatable
      */
     public function canOnlyViewOwnData(): bool
     {
-        return $this->hasRole('employee');
+        return $this->isStaff();
     }
 
     public function assignedOrders()

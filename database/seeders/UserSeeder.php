@@ -103,7 +103,44 @@ class UserSeeder extends Seeder
                 'username' => 'jayhun',
                 'phone' => null,
                 'roles' => ['workshop_worker']
-            ]
+            ],
+            [
+                'name' => 'Керим',
+                'username' => 'kerim',
+                'phone' => null,
+                'roles' => ['manager']
+            ],
+            [
+                'name' => 'Нязли',
+                'username' => 'nazli',
+                'phone' => null,
+                'roles' => ['manager']
+            ],
+            [
+                'name' => 'Неля',
+                'username' => 'nelya',
+                'phone' => null,
+                'roles' => ['manager']
+            ],
+            [
+                'name' => 'Елена',
+                'username' => 'elena',
+                'phone' => null,
+                'roles' => ['manager']
+            ],
+            [
+                'name' => 'Дженнет',
+                'username' => 'jennet',
+                'phone' => null,
+                'roles' => ['manager']
+            ],
+            [
+                'name' => 'Алексей',
+                'username' => 'aleksey',
+                'phone' => null,
+                'roles' => ['designer']
+            ],
+            
         ];
 
         foreach ($employees as $employeeData) {

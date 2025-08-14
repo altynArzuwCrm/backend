@@ -67,9 +67,6 @@ class ApiMultipleAssignmentsTest extends TestCase
         // Создаем продукт
         $this->product = Product::create([
             'name' => 'Тестовый продукт',
-            'has_design_stage' => true,
-            'has_print_stage' => true,
-            'has_workshop_stage' => true,
         ]);
     }
 

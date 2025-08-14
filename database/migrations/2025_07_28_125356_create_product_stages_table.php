@@ -23,8 +23,8 @@ return new class extends Migration
             $table->unique(['product_id', 'stage_id']);
         });
 
-        // Migrate existing has_*_stage data to new system
-        $this->migrateExistingStageData();
+        // Add default stages for all existing products
+        $this->addDefaultStagesToProducts();
     }
 
     /**
@@ -35,56 +35,22 @@ return new class extends Migration
         Schema::dropIfExists('product_stages');
     }
 
-    private function migrateExistingStageData()
+    private function addDefaultStagesToProducts()
     {
-        // Get stage mappings
-        $stageMap = [
-            'design' => 'has_design_stage',
-            'print' => 'has_print_stage',
-            'engraving' => 'has_engraving_stage',
-            'workshop' => 'has_workshop_stage'
-        ];
-
         $products = DB::table('products')->get();
-        $stages = DB::table('stages')->whereIn('name', array_keys($stageMap))->get()->keyBy('name');
+        $stages = DB::table('stages')->get()->keyBy('name');
 
         foreach ($products as $product) {
-            foreach ($stageMap as $stageName => $hasField) {
-                $stage = $stages->get($stageName);
-                if ($stage && $product->$hasField) {
-                    DB::table('product_stages')->insert([
-                        'product_id' => $product->id,
-                        'stage_id' => $stage->id,
-                        'is_available' => true,
-                        'is_default' => false,
-                        'created_at' => now(),
-                        'updated_at' => now(),
-                    ]);
-                }
-            }
-
-            // Add default stages that all products should have
-            $defaultStages = ['draft', 'final', 'completed', 'cancelled'];
-            foreach ($defaultStages as $stageName) {
-                $stage = $stages->get($stageName) ?? DB::table('stages')->where('name', $stageName)->first();
-                if ($stage) {
-                    // Check if not already added
-                    $exists = DB::table('product_stages')
-                        ->where('product_id', $product->id)
-                        ->where('stage_id', $stage->id)
-                        ->exists();
-
-                    if (!$exists) {
-                        DB::table('product_stages')->insert([
-                            'product_id' => $product->id,
-                            'stage_id' => $stage->id,
-                            'is_available' => true,
-                            'is_default' => $stageName === 'draft', // draft is default starting stage
-                            'created_at' => now(),
-                            'updated_at' => now(),
-                        ]);
-                    }
-                }
+            // Add all stages to all products by default
+            foreach ($stages as $stage) {
+                DB::table('product_stages')->insert([
+                    'product_id' => $product->id,
+                    'stage_id' => $stage->id,
+                    'is_available' => true,
+                    'is_default' => $stage->name === 'draft', // draft is default starting stage
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ]);
             }
         }
     }
