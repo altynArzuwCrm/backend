@@ -23,6 +23,13 @@ class User extends Authenticatable
                 $user->phone = trim($user->phone);
             }
         });
+
+        // Очищаем кэш ролей при изменении пользователя
+        static::updated(function ($user) {
+            if ($user->wasChanged()) {
+                \Illuminate\Support\Facades\Cache::forget("user_roles_{$user->id}");
+            }
+        });
     }
 
     public function roles()
@@ -36,12 +43,21 @@ class User extends Authenticatable
      */
     public function hasAnyRole($roles): bool
     {
+        // Кэшируем роли пользователя на 30 минут
+        $userRoles = \Illuminate\Support\Facades\Cache::remember(
+            "user_roles_{$this->id}",
+            1800,
+            function () {
+                return $this->roles()->pluck('name')->toArray();
+            }
+        );
+
         if (is_string($roles)) {
-            return $this->roles()->where('name', $roles)->exists();
+            return in_array($roles, $userRoles);
         }
 
         if (is_array($roles)) {
-            return $this->roles()->whereIn('name', $roles)->exists();
+            return !empty(array_intersect($roles, $userRoles));
         }
 
         return false;

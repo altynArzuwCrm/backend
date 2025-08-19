@@ -34,16 +34,23 @@ class OrderPolicy
             'user_id' => $user->id,
             'user_roles' => $user->roles->pluck('name')->toArray(),
             'is_staff' => $user->isStaff(),
-            'has_elevated_permissions' => $user->hasElevatedPermissions()
+            'has_elevated_permissions' => $user->hasElevatedPermissions(),
+            'order_id' => $order->id
         ]);
+
         // Админы, менеджеры и power_user видят все заказы
         if ($user->hasElevatedPermissions()) {
+            Log::info('User has elevated permissions - access granted');
             return true;
         }
+
         // Сотрудники видят все заказы
         if ($user->isStaff()) {
+            Log::info('User is staff - access granted');
             return true;
         }
+
+        Log::warning('User access denied - no permissions');
         return false;
     }
 

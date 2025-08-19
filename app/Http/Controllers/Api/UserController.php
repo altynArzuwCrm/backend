@@ -5,6 +5,8 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\UserResource;
 use App\Models\User;
+use App\Repositories\UserRepository;
+use App\DTOs\UserDTO;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Gate;
@@ -15,6 +17,13 @@ use Illuminate\Support\Facades\Log;
 
 class UserController extends Controller
 {
+    protected UserRepository $userRepository;
+
+    public function __construct(UserRepository $userRepository)
+    {
+        $this->userRepository = $userRepository;
+    }
+
     private function checkUserManagementAccess()
     {
         $user = Auth::user();
@@ -27,79 +36,54 @@ class UserController extends Controller
     {
         $user = Auth::user();
 
-
-
         // Разрешаем доступ всем аутентифицированным пользователям для получения списка пользователей
         // так как эта информация нужна для назначения задач
         if (!$user) {
             abort(401, 'Необходима аутентификация');
         }
 
-        $query = User::query();
+        $result = $this->userRepository->getPaginatedUsers($request);
 
-        if ($request->filled('role')) {
-            $query->whereHas('roles', function ($q) use ($request) {
-                $q->where('name', $request->role);
-            });
-        }
-
-        if ($request->filled('search')) {
-            $search = $request->search;
-            $query->where(function ($q) use ($search) {
-                $q->where('name', 'like', '%' . $search . '%')
-                    ->orWhere('username', 'like', '%' . $search . '%')
-                    ->orWhere('id', 'like', '%' . $search . '%');
-            });
-        }
-
-        $sortBy = $request->get('sort_by', 'id');
-        $sortOrder = $request->get('sort_order', 'asc');
-
-        // Обычная сортировка по полям пользователя
-        $allowedSorts = ['id', 'name', 'username', 'created_at', 'updated_at'];
-        if (in_array($sortBy, $allowedSorts)) {
-            $query->orderBy($sortBy, $sortOrder);
-        }
-
-        if ($request->has('is_active') && $request->is_active !== '') {
-            $query->where('is_active', $request->is_active);
-        }
-
-        $perPage = $request->get('per_page', 30);
-        $users = $query->with('roles')->paginate($perPage);
-
-
-
-        return response()->json([
-            'data' => $users->items(),
-            'pagination' => [
-                'current_page' => $users->currentPage(),
-                'last_page' => $users->lastPage(),
-                'per_page' => $users->perPage(),
-                'total' => $users->total(),
-            ]
-        ], 200);
+        return response()->json($result);
     }
 
     public function getByRole(Request $request, string $role)
     {
+        Log::info('UserController::getByRole called', [
+            'role' => $role,
+            'user_id' => auth()->id(),
+            'user_roles' => auth()->user()->roles->pluck('name')->toArray()
+        ]);
+
         // Проверяем только аутентификацию, без проверки ролей
         if (!auth()->check()) {
+            Log::warning('Authentication failed for getByRole', [
+                'role' => $role
+            ]);
             abort(401, 'Необходима аутентификация');
         }
 
-        $users = User::whereHas('roles', function ($q) use ($role) {
-            $q->where('name', $role);
-        })->where('is_active', true)->get();
+        $users = $this->userRepository->getUsersByRole($role);
 
-        return UserResource::collection($users);
+        Log::info('Users loaded by role', [
+            'role' => $role,
+            'users_count' => count($users)
+        ]);
+
+        return response()->json($users);
     }
 
     public function show(User $user)
     {
         $this->checkUserManagementAccess();
 
-        return new UserResource($user);
+        $userDTO = $this->userRepository->getUserById($user->id);
+
+        if (!$userDTO) {
+            abort(404, 'Пользователь не найден');
+        }
+
+        return response()->json($userDTO->toArray());
     }
 
     public function store(Request $request)

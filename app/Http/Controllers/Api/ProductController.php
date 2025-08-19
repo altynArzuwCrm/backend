@@ -4,14 +4,24 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Product;
+use App\Repositories\ProductRepository;
+use App\DTOs\ProductDTO;
 use Illuminate\Http\Request;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Log;
 use App\Http\Resources\ProductResource;
 
 class ProductController extends Controller
 {
+    protected ProductRepository $productRepository;
+
+    public function __construct(ProductRepository $productRepository)
+    {
+        $this->productRepository = $productRepository;
+    }
+
     public function index(Request $request)
     {
         if (Gate::denies('viewAny', Product::class)) {
@@ -20,60 +30,9 @@ class ProductController extends Controller
             ], 403);
         }
 
-        $allowedPerPage = [10, 20, 50, 100, 200, 500];
-        $perPage = (int) $request->get('per_page', 30);
-        if (!in_array($perPage, $allowedPerPage)) {
-            $perPage = 30;
-        }
-        $query = Product::with(['assignments.user', 'orders.assignments', 'availableStages.roles']);
+        $result = $this->productRepository->getPaginatedProducts($request);
 
-        if ($request->has('search') && $request->search) {
-            $search = $request->search;
-            $query->where(function ($q) use ($search) {
-                $q->where('name', 'like', '%' . $search . '%')
-                    ->orWhere('id', 'like', '%' . $search . '%');
-            });
-        }
-
-        $sortBy = $request->get('sort_by', 'id');
-        $sortOrder = $request->get('sort_order', 'desc');
-        if ($sortBy === 'name') {
-            // Сортируем по name: сначала кириллица, потом латиница, с поддержкой asc/desc
-            $products = $query->get();
-            $products = $products->sort(function ($a, $b) use ($sortOrder) {
-                $isCyrA = preg_match('/^[А-Яа-яЁё]/u', $a->name);
-                $isCyrB = preg_match('/^[А-Яа-яЁё]/u', $b->name);
-                if ($isCyrA && !$isCyrB) return $sortOrder === 'asc' ? -1 : 1;
-                if (!$isCyrA && $isCyrB) return $sortOrder === 'asc' ? 1 : -1;
-                // Если оба на кириллице или оба на латинице — обычная сортировка
-                return $sortOrder === 'asc'
-                    ? mb_strtolower($a->name) <=> mb_strtolower($b->name)
-                    : mb_strtolower($b->name) <=> mb_strtolower($a->name);
-            });
-            // Пагинация вручную
-            $page = $request->get('page', 1);
-            $perPage = $request->get('per_page', 30);
-            $paged = new \Illuminate\Pagination\LengthAwarePaginator(
-                $products->forPage($page, $perPage)->values(),
-                $products->count(),
-                $perPage,
-                $page,
-                ['path' => $request->url(), 'query' => $request->query()]
-            );
-            $paged->getCollection()->transform(function ($product) {
-                return \Illuminate\Support\Facades\Gate::allows('view', $product) ? $product : null;
-            });
-            $paged->setCollection($paged->getCollection()->filter()->values());
-            return ProductResource::collection($paged);
-        } else {
-            $query->orderBy($sortBy, $sortOrder);
-            $products = $query->paginate($perPage);
-            $products->getCollection()->transform(function ($product) {
-                return \Illuminate\Support\Facades\Gate::allows('view', $product) ? $product : null;
-            });
-            $products->setCollection($products->getCollection()->filter()->values());
-            return ProductResource::collection($products);
-        }
+        return response()->json($result);
     }
 
     public function show(Product $product)
@@ -84,8 +43,13 @@ class ProductController extends Controller
             ], 403);
         }
 
-        $product->load(['assignments.user', 'orders.assignments', 'availableStages.roles']);
-        return new ProductResource($product);
+        $productDTO = $this->productRepository->getProductById($product->id);
+
+        if (!$productDTO) {
+            abort(404, 'Продукт не найден');
+        }
+
+        return response()->json($productDTO->toArray());
     }
 
     public function store(Request $request)
@@ -111,6 +75,8 @@ class ProductController extends Controller
 
         // Assign custom stages if provided (auto-assignment happens in model boot)
         if (isset($data['stages'])) {
+            Log::info('Creating product with custom stages', ['product_id' => $product->id, 'stages' => $data['stages']]);
+
             // Remove auto-assigned stages first
             $product->productStages()->delete();
 
@@ -123,9 +89,20 @@ class ProductController extends Controller
                     'is_default' => $stageData['is_default'] ?? false,
                 ]);
             }
+        } else {
+            Log::info('Creating product with default stages', ['product_id' => $product->id]);
+
+            // If no stages provided, ensure all stages are available (for backward compatibility)
+            $allStages = \App\Models\Stage::all();
+            foreach ($allStages as $stage) {
+                \App\Models\ProductStage::updateOrCreate(
+                    ['product_id' => $product->id, 'stage_id' => $stage->id],
+                    ['is_available' => true, 'is_default' => $stage->name === 'draft']
+                );
+            }
         }
 
-        $product->load(['assignments.user', 'orders.assignments', 'availableStages.roles']);
+        $product->load(['assignments.user', 'orders.assignments', 'availableStages.roles', 'productStages.stage.roles']);
         return response()->json(['data' => new ProductResource($product)], 201);
     }
 
@@ -136,7 +113,7 @@ class ProductController extends Controller
         }
 
         $products = Cache::remember('all_products', 60, function () {
-            return Product::with(['assignments.user', 'orders.assignments', 'availableStages.roles'])->orderBy('id')->get();
+            return Product::with(['assignments.user', 'orders.assignments', 'availableStages.roles', 'productStages.stage.roles'])->orderBy('id')->get();
         });
         return ProductResource::collection($products);
     }
@@ -164,6 +141,8 @@ class ProductController extends Controller
 
         // Update stages if provided
         if (isset($data['stages'])) {
+            Log::info('Updating product stages', ['product_id' => $product->id, 'stages' => $data['stages']]);
+
             // Remove existing stage assignments
             $product->productStages()->delete();
 
@@ -176,9 +155,20 @@ class ProductController extends Controller
                     'is_default' => $stageData['is_default'] ?? false,
                 ]);
             }
+        } else {
+            Log::info('No stages provided, using default stages', ['product_id' => $product->id]);
+
+            // If no stages provided, ensure all stages are available (for backward compatibility)
+            $allStages = \App\Models\Stage::all();
+            foreach ($allStages as $stage) {
+                \App\Models\ProductStage::updateOrCreate(
+                    ['product_id' => $product->id, 'stage_id' => $stage->id],
+                    ['is_available' => true, 'is_default' => $stage->name === 'draft']
+                );
+            }
         }
 
-        $product->load(['assignments.user', 'orders.assignments', 'availableStages.roles']);
+        $product->load(['assignments.user', 'orders.assignments', 'availableStages.roles', 'productStages.stage.roles']);
         return new ProductResource($product);
     }
 

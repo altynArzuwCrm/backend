@@ -27,15 +27,18 @@ class Product extends Model
 
         static::created(function ($product) {
             // Auto-assign default stages when product is created
-            $defaultStages = Stage::ordered()->get();
+            // This will only run if no stages are explicitly provided
+            if (!$product->wasRecentlyCreated || $product->productStages()->count() === 0) {
+                $defaultStages = Stage::ordered()->get();
 
-            foreach ($defaultStages as $stage) {
-                ProductStage::create([
-                    'product_id' => $product->id,
-                    'stage_id' => $stage->id,
-                    'is_available' => true,
-                    'is_default' => $stage->roles && $stage->roles->count() > 0 && $stage->order === $defaultStages->where('roles')->first()?->order,
-                ]);
+                foreach ($defaultStages as $stage) {
+                    ProductStage::create([
+                        'product_id' => $product->id,
+                        'stage_id' => $stage->id,
+                        'is_available' => true,
+                        'is_default' => $stage->name === 'draft',
+                    ]);
+                }
             }
         });
     }

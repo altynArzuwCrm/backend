@@ -20,10 +20,12 @@ class HandleNullRelations
         try {
             return $next($request);
         } catch (ErrorException $e) {
-            if (str_contains($e->getMessage(), 'Attempt to read property') || 
+            if (
+                str_contains($e->getMessage(), 'Attempt to read property') ||
                 str_contains($e->getMessage(), 'Trying to get property') ||
-                str_contains($e->getMessage(), 'Call to a member function')) {
-                
+                str_contains($e->getMessage(), 'Call to a member function')
+            ) {
+
                 Log::error('Null relation error', [
                     'message' => $e->getMessage(),
                     'file' => $e->getFile(),
@@ -39,9 +41,9 @@ class HandleNullRelations
                     'details' => config('app.debug') ? $e->getMessage() : null
                 ], 500);
             }
-            
+
             // Если это не ошибка null объекта, пробрасываем дальше
             throw $e;
         }
     }
-} 
+}

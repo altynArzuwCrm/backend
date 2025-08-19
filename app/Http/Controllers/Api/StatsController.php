@@ -19,16 +19,84 @@ class StatsController extends Controller
         $stats = Cache::remember('stats_main', 10, function () {
             $users = User::count();
             $orders = Order::count();
-            $revenue = Project::sum('total_price') ?? 0;
             $newClients = Client::where('created_at', '>=', Carbon::now()->subDays(30))->count();
             return [
                 'users' => $users,
                 'orders' => $orders,
-                'revenue' => $revenue,
                 'newClients' => $newClients,
             ];
         });
         return response()->json($stats);
+    }
+
+    public function revenueByMonth(Request $request)
+    {
+        $user = $request->user();
+
+        // Проверяем права доступа
+        if (!$user->is_active) {
+            return response()->json(['message' => 'Ваш аккаунт деактивирован'], 403);
+        }
+
+        // Только админы и менеджеры могут видеть статистику выручки
+        if ($user->isStaff()) {
+            return response()->json(['message' => 'Недостаточно прав'], 403);
+        }
+
+        $year = $request->get('year', Carbon::now()->year);
+
+        $revenueData = Cache::remember("revenue_by_month_{$year}", 60, function () use ($year) {
+            // Получаем выручку по месяцам из проектов
+            $monthlyRevenue = Project::selectRaw('
+                MONTH(created_at) as month,
+                SUM(total_price) as revenue
+            ')
+                ->whereYear('created_at', $year)
+                ->groupBy('month')
+                ->orderBy('month')
+                ->get()
+                ->keyBy('month');
+
+            // Получаем выручку по месяцам из заказов (если проекты не связаны)
+            $monthlyOrderRevenue = Order::selectRaw('
+                MONTH(created_at) as month,
+                SUM(price) as revenue
+            ')
+                ->whereYear('created_at', $year)
+                ->whereNull('project_id')
+                ->groupBy('month')
+                ->orderBy('month')
+                ->get()
+                ->keyBy('month');
+
+            // Объединяем данные
+            $result = [];
+            $totalRevenue = 0;
+
+            for ($month = 1; $month <= 12; $month++) {
+                $projectRevenue = $monthlyRevenue->get($month)?->revenue ?? 0;
+                $orderRevenue = $monthlyOrderRevenue->get($month)?->revenue ?? 0;
+                $monthRevenue = $projectRevenue + $orderRevenue;
+
+                $result[] = [
+                    'month' => $month,
+                    'month_name' => Carbon::createFromDate($year, $month, 1)->format('M'),
+                    'revenue' => $monthRevenue,
+                    'revenue_formatted' => number_format($monthRevenue, 0, '.', ' ')
+                ];
+
+                $totalRevenue += $monthRevenue;
+            }
+
+            return [
+                'monthly_data' => $result,
+                'total_revenue' => $totalRevenue,
+                'total_revenue_formatted' => number_format($totalRevenue, 0, '.', ' '),
+                'year' => $year
+            ];
+        });
+
+        return response()->json($revenueData);
     }
 
     public function dashboard(Request $request)

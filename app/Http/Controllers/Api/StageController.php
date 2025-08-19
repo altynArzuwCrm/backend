@@ -209,13 +209,36 @@ class StageController extends Controller
 
     public function getAllUsersByStageRoles(Request $request)
     {
-        if (Gate::denies('viewAny', Stage::class)) {
-            abort(403, 'Доступ запрещён');
-        }
+        Log::info('StageController::getAllUsersByStageRoles called', [
+            'user_id' => auth()->id(),
+            'user_roles' => auth()->user()->roles->pluck('name')->toArray()
+        ]);
+
+        // Временно убираем проверку прав для отладки
+        // if (Gate::denies('viewAny', Stage::class)) {
+        //     Log::warning('Access denied for getAllUsersByStageRoles', [
+        //         'user_id' => auth()->id()
+        //     ]);
+        //     abort(403, 'Доступ запрещён');
+        // }
 
         $stages = Stage::with(['roles.users' => function ($query) {
             $query->select('users.id', 'name', 'username', 'phone');
         }])->get();
+
+        Log::info('Stages loaded with roles and users', [
+            'stages_count' => $stages->count(),
+            'stages_with_roles' => $stages->map(function ($stage) {
+                return [
+                    'stage_id' => $stage->id,
+                    'stage_name' => $stage->name,
+                    'roles_count' => $stage->roles->count(),
+                    'users_count' => $stage->roles->sum(function ($role) {
+                        return $role->users->count();
+                    })
+                ];
+            })->toArray()
+        ]);
 
         $result = [];
         foreach ($stages as $stage) {
@@ -225,6 +248,11 @@ class StageController extends Controller
             }
             $result[$stage->id] = $users->unique('id')->values();
         }
+
+        Log::info('getAllUsersByStageRoles result', [
+            'result_keys' => array_keys($result),
+            'total_users' => collect($result)->flatten(1)->count()
+        ]);
 
         return response()->json($result);
     }

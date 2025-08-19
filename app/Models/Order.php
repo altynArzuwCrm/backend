@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\Cache;
 
 class Order extends Model
 {
@@ -58,16 +59,22 @@ class Order extends Model
             if ($order->project) {
                 $order->project->recalculateTotalPrice();
             }
+            // Очищаем кэш заказов при создании нового заказа
+            Cache::flush();
         });
         static::updated(function ($order) {
             if ($order->project) {
                 $order->project->recalculateTotalPrice();
             }
+            // Очищаем кэш заказов при обновлении заказа
+            Cache::flush();
         });
         static::deleted(function ($order) {
             if ($order->project) {
                 $order->project->recalculateTotalPrice();
             }
+            // Очищаем кэш заказов при удалении заказа
+            Cache::flush();
         });
     }
 

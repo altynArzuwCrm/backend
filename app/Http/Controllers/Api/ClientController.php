@@ -7,6 +7,7 @@ use App\Models\Client;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Log;
 
 class ClientController extends Controller
 {
@@ -195,23 +196,64 @@ class ClientController extends Controller
         return response()->json($clients);
     }
 
-    public function destroy(Client $client)
+    public function destroy($id)
     {
+        // Находим клиента вручную, чтобы избежать проблем с Route Model Binding
+        $client = Client::find($id);
+
+        if (!$client) {
+            Log::warning('Client not found for deletion', [
+                'client_id' => $id,
+                'user_id' => auth()->id()
+            ]);
+            return response()->json([
+                'message' => 'Клиент не найден',
+                'error_code' => 'CLIENT_NOT_FOUND'
+            ], 404);
+        }
+
+        Log::info('ClientController::destroy called', [
+            'client_id' => $client->id,
+            'client_name' => $client->name,
+            'user_id' => auth()->id(),
+            'user_roles' => auth()->user()->roles->pluck('name')->toArray(),
+            'can_delete' => Gate::allows('delete', $client)
+        ]);
+
         if (Gate::denies('delete', $client)) {
+            Log::warning('Access denied for client deletion', [
+                'client_id' => $client->id,
+                'user_id' => auth()->id()
+            ]);
             abort(403, 'Доступ запрещён');
         }
+
+
 
         $activeOrdersCount = $client->orders()->where('is_archived', false)->count();
 
         if ($activeOrdersCount > 0) {
+            Log::warning('Cannot delete client with active orders', [
+                'client_id' => $client->id,
+                'active_orders_count' => $activeOrdersCount
+            ]);
             return response()->json([
                 'message' => "Невозможно удалить клиента, у которого есть {$activeOrdersCount} активных заказов"
             ], 422);
         }
 
+        Log::info('Deleting client', [
+            'client_id' => $client->id,
+            'client_name' => $client->name
+        ]);
+
         $client->delete();
 
         Cache::flush();
+
+        Log::info('Client deleted successfully', [
+            'client_id' => $client->id
+        ]);
 
         return response()->json(['message' => 'Клиент удалён']);
     }

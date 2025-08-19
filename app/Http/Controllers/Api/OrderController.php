@@ -6,99 +6,84 @@ use App\Http\Controllers\Controller;
 use App\Models\Order;
 use App\Models\OrderAssignment;
 use App\Models\OrderStatusLog;
+use App\Repositories\OrderRepository;
+use App\DTOs\OrderDTO;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Cache;
 
 class OrderController extends Controller
 {
+    protected OrderRepository $orderRepository;
+
+    public function __construct(OrderRepository $orderRepository)
+    {
+        $this->orderRepository = $orderRepository;
+    }
+
     public function index(Request $request)
     {
         if (Gate::denies('viewAny', Order::class)) {
             abort(403, 'Доступ запрещён');
         }
+
         $user = request()->user();
-
-        $query = Order::with(['project', 'product', 'client', 'stage']);
-
-        if (!$user->hasAnyRole(['admin', 'manager'])) {
-            $assignedOrderIds = OrderAssignment::query()
-                ->where('user_id', $user->id)
-                ->pluck('order_id');
-
-            $query->whereIn('id', $assignedOrderIds);
-        }
-
-        if ($request->project_id) {
-            $query->where('project_id', $request->project_id);
-        }
-
-        if ($request->client_id) {
-            $query->where('client_id', $request->client_id);
-        }
-
-        if ($request->filled('stage')) {
-            $stage = \App\Models\Stage::where('name', $request->stage)->first();
-            if ($stage) {
-                $query->where('stage_id', $stage->id);
-            }
-        }
-
-        if ($request->filled('is_archived')) {
-            $isArchived = $request->boolean('is_archived');
-            $query->where('is_archived', $isArchived);
-        }
-
-        if ($request->filled('assignment_status')) {
-            $assignmentStatus = $request->assignment_status;
-            $query->whereHas('assignments', function ($q) use ($assignmentStatus) {
-                $q->where('status', $assignmentStatus);
-            })->whereDoesntHave('assignments', function ($q) use ($assignmentStatus) {
-                $q->where('status', '!=', $assignmentStatus);
-            });
-        }
-
-        if ($request->filled('search')) {
-            $search = $request->search;
-            $query->where(function ($q) use ($search) {
-                $q->where('id', 'like', '%' . $search . '%')
-                    ->orWhereHas('product', function ($productQuery) use ($search) {
-                        $productQuery->where('name', 'like', '%' . $search . '%');
-                    })
-                    ->orWhereHas('client', function ($clientQuery) use ($search) {
-                        $clientQuery->where('name', 'like', '%' . $search . '%');
-                    });
-            });
-        }
-
-        $sortBy = $request->get('sort_by', 'id');
-        $sortOrder = $request->get('sort_order', 'desc');
-        $query->orderBy($sortBy, $sortOrder);
-
-        $allowedPerPage = [10, 20, 50, 100, 200, 500];
-        $perPage = (int) $request->input('per_page', 30);
-        if (!in_array($perPage, $allowedPerPage)) {
-            $perPage = 30;
-        }
-
-        $result = $query->paginate($perPage);
+        $result = $this->orderRepository->getPaginatedOrders($request, $user);
 
         return response()->json($result);
     }
 
     public function show(Order $order)
     {
+        Log::info('OrderController::show called', [
+            'order_id' => $order->id,
+            'user_id' => request()->user()->id,
+            'user_roles' => request()->user()->roles->pluck('name')->toArray()
+        ]);
+
         $user = request()->user();
 
-        // Логируем информацию о пользователе и заказе
         if (Gate::denies('view', $order)) {
+            Log::warning('Access denied for order view', [
+                'order_id' => $order->id,
+                'user_id' => $user->id
+            ]);
             abort(403, 'Доступ запрещён');
         }
 
-        $order->load(['project', 'product', 'client.contacts', 'stage', 'assignments.user.roles', 'assignments.assignedStages']);
+        try {
+            Log::info('Loading order data', [
+                'order_id' => $order->id
+            ]);
 
-        return response()->json($order);
+            $orderDTO = $this->orderRepository->getOrderById($order->id);
+
+            if (!$orderDTO) {
+                Log::warning('Order not found in repository', [
+                    'order_id' => $order->id
+                ]);
+                abort(404, 'Заказ не найден');
+            }
+
+            Log::info('Order loaded successfully', [
+                'order_id' => $order->id,
+                'has_client' => !is_null($orderDTO->client),
+                'has_project' => !is_null($orderDTO->project),
+                'has_product' => !is_null($orderDTO->product),
+                'assignments_count' => count($orderDTO->assignments)
+            ]);
+
+            return response()->json($orderDTO->toArray());
+        } catch (\Exception $e) {
+            Log::error('Error in OrderController::show', [
+                'order_id' => $order->id,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            throw $e;
+        }
     }
 
     public function store(Request $request)
@@ -208,7 +193,7 @@ class OrderController extends Controller
             if ($stage) {
                 $data['stage_id'] = $stage->id;
             } else {
-                \Log::error('Stage not found', ['stage_name' => $data['stage']]);
+                Log::error('Stage not found', ['stage_name' => $data['stage']]);
             }
         }
 
@@ -344,7 +329,7 @@ class OrderController extends Controller
                 // Проверяем, что назначение создается только для выбранных стадий
                 if (isset($assignmentData['stage_id']) && !empty($selectedStages)) {
                     if (!in_array($assignmentData['stage_id'], $selectedStages)) {
-                        Log::warning("Attempted to create assignment for non-selected stage: {$assignmentData['stage_id']}");
+                        \Log::warning("Attempted to create assignment for non-selected stage: {$assignmentData['stage_id']}");
                         continue; // Пропускаем назначения для невыбранных стадий
                     }
                 }

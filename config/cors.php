@@ -19,7 +19,12 @@ return [
 
     'allowed_methods' => ['*'],
 
-    'allowed_origins' => ['*'],
+    'allowed_origins' => [
+        'http://localhost:5173',           // Development
+        'http://localhost:3000',           // Development alternative
+        'https://your-domain.com',         // Production - замените на ваш домен
+        'https://www.your-domain.com',     // Production www - замените на ваш домен
+    ],
 
     'allowed_origins_patterns' => [],
 

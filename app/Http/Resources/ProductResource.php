@@ -34,6 +34,23 @@ class ProductResource extends JsonResource
                     }),
                 ];
             }),
+            'all_stages' => $this->productStages->map(function ($productStage) {
+                return [
+                    'id' => $productStage->stage->id,
+                    'name' => $productStage->stage->name,
+                    'display_name' => $productStage->stage->display_name,
+                    'color' => $productStage->stage->color,
+                    'is_available' => $productStage->is_available,
+                    'is_default' => $productStage->is_default,
+                    'roles' => $productStage->stage->roles->map(function ($role) {
+                        return [
+                            'id' => $role->id,
+                            'name' => $role->name,
+                            'display_name' => $role->display_name,
+                        ];
+                    }),
+                ];
+            }),
             'designers' => UserResource::collection($this->getDesigners()),
             'print_operators' => UserResource::collection($this->getPrintOperators()),
             'engraving_operators' => UserResource::collection($this->getEngravingOperators()),

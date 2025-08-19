@@ -22,8 +22,10 @@ Route::post('login', [AuthController::class, 'login'])->name('login');
 Route::middleware(['auth:sanctum', 'handle.null.relations'])->group(function () {
     Route::post('logout', [AuthController::class, 'logout']);
     Route::get('me', [AuthController::class, 'me']);
+
     Route::get('stats', [StatsController::class, 'index']);
     Route::get('stats/dashboard', [\App\Http\Controllers\Api\StatsController::class, 'dashboard']);
+    Route::get('stats/revenue-by-month', [\App\Http\Controllers\Api\StatsController::class, 'revenueByMonth']);
 
     Route::get('activity', [ActivityController::class, 'index']);
     Route::get('recent-activity', [ActivityController::class, 'recent']);

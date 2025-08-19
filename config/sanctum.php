@@ -15,12 +15,20 @@ return [
     |
     */
 
-    'stateful' => explode(',', env('SANCTUM_STATEFUL_DOMAINS', sprintf(
-        '%s%s',
-        'localhost,localhost:3000,127.0.0.1,127.0.0.1:8000,::1',
-        Sanctum::currentApplicationUrlWithPort(),
-        // Sanctum::currentRequestHost(),
-    ))),
+    'stateful' => [
+        'localhost',
+        'localhost:5173',
+        'localhost:3000',
+        '127.0.0.1',
+        '127.0.0.1:8000',
+        '::1',
+        // Production domains - replace with your actual domains
+        env('APP_DOMAIN', 'alytn-arzuw.local'),
+        env('APP_DOMAIN_WWW', 'www.alytn-arzuw.local'),
+        // Add your production domains here
+        // 'your-production-domain.com',
+        // 'www.your-production-domain.com',
+    ],
 
     /*
     |--------------------------------------------------------------------------
