@@ -51,10 +51,7 @@ class ProductResource extends JsonResource
                     }),
                 ];
             }),
-            'designers' => UserResource::collection($this->getDesigners()),
-            'print_operators' => UserResource::collection($this->getPrintOperators()),
-            'engraving_operators' => UserResource::collection($this->getEngravingOperators()),
-            'workshop_workers' => UserResource::collection($this->getWorkshopWorkers()),
+
             'assignments' => $this->assignments->map(function ($assignment) {
                 return [
                     'id' => $assignment->id,

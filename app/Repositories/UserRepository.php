@@ -6,6 +6,7 @@ use App\Models\User;
 use App\DTOs\UserDTO;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 
 class UserRepository
 {
@@ -49,13 +50,17 @@ class UserRepository
 
     public function getUserById(int $id): ?UserDTO
     {
-        $user = User::with(['roles'])->find($id);
+        // Кэшируем отдельных пользователей на 15 минут
+        $cacheKey = 'user_' . $id;
+        return Cache::remember($cacheKey, 900, function () use ($id) {
+            $user = User::with(['roles'])->find($id);
 
-        if (!$user) {
-            return null;
-        }
+            if (!$user) {
+                return null;
+            }
 
-        return UserDTO::fromModel($user);
+            return UserDTO::fromModel($user);
+        });
     }
 
     public function createUser(array $data): UserDTO
@@ -95,31 +100,35 @@ class UserRepository
 
     public function getUsersByRole(string $roleName): array
     {
-        $users = User::with(['roles'])
-            ->whereHas('roles', function ($query) use ($roleName) {
-                $query->where('name', $roleName);
-            })
-            ->get();
+        // Кэшируем пользователей по роли на 10 минут
+        $cacheKey = 'users_by_role_' . $roleName;
+        return Cache::remember($cacheKey, 600, function () use ($roleName) {
+            $users = User::with(['roles'])
+                ->whereHas('roles', function ($query) use ($roleName) {
+                    $query->where('name', $roleName);
+                })
+                ->get();
 
-        // Возвращаем массив моделей напрямую, а не DTO
-        // Это исправляет ошибку "Attempt to read property 'id' on array"
-        // Преобразуем каждую модель в массив с правильной структурой
-        return $users->map(function ($user) {
-            return [
-                'id' => $user->id,
-                'name' => $user->name,
-                'username' => $user->username,
-                'phone' => $user->phone,
-                'is_active' => $user->is_active,
-                'roles' => $user->roles->map(function ($role) {
-                    return [
-                        'id' => $role->id,
-                        'name' => $role->name,
-                        'display_name' => $role->display_name
-                    ];
-                })->toArray()
-            ];
-        })->toArray();
+            // Возвращаем массив моделей напрямую, а не DTO
+            // Это исправляет ошибку "Attempt to read property 'id' on array"
+            // Преобразуем каждую модель в массив с правильной структурой
+            return $users->map(function ($user) {
+                return [
+                    'id' => $user->id,
+                    'name' => $user->name,
+                    'username' => $user->username,
+                    'phone' => $user->phone,
+                    'is_active' => $user->is_active,
+                    'roles' => $user->roles->map(function ($role) {
+                        return [
+                            'id' => $role->id,
+                            'name' => $role->name,
+                            'display_name' => $role->display_name
+                        ];
+                    })->toArray()
+                ];
+            })->toArray();
+        });
     }
 
     public function getActiveUsers(): array

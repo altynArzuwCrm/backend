@@ -27,7 +27,6 @@ Route::middleware(['auth:sanctum', 'handle.null.relations'])->group(function () 
     Route::get('stats/dashboard', [\App\Http\Controllers\Api\StatsController::class, 'dashboard']);
     Route::get('stats/revenue-by-month', [\App\Http\Controllers\Api\StatsController::class, 'revenueByMonth']);
 
-    Route::get('activity', [ActivityController::class, 'index']);
     Route::get('recent-activity', [ActivityController::class, 'recent']);
 
     Route::get('orders/{order}/status-logs', [OrderController::class, 'statusLogs']);

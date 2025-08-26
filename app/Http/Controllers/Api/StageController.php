@@ -8,6 +8,7 @@ use App\Models\Role;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Validation\Rule;
 
 class StageController extends Controller
@@ -16,9 +17,13 @@ class StageController extends Controller
     {
         // Разрешаем доступ всем аутентифицированным пользователям
         // так как стадии нужны для работы с заказами
-        $stages = Stage::with('roles')
-            ->ordered()
-            ->get();
+
+        // Кэшируем стадии на 1 час для быстрых ответов
+        $stages = Cache::remember('stages_with_roles', 3600, function () {
+            return Stage::with('roles')
+                ->ordered()
+                ->get();
+        });
 
         return response()->json($stages);
     }

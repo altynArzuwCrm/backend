@@ -36,13 +36,15 @@ class UserController extends Controller
     {
         $user = Auth::user();
 
-        // Разрешаем доступ всем аутентифицированным пользователям для получения списка пользователей
-        // так как эта информация нужна для назначения задач
         if (!$user) {
             abort(401, 'Необходима аутентификация');
         }
 
-        $result = $this->userRepository->getPaginatedUsers($request);
+        // Кэшируем результаты поиска на 5 минут для быстрых ответов
+        $cacheKey = 'users_' . md5($request->fullUrl());
+        $result = Cache::remember($cacheKey, 300, function () use ($request) {
+            return $this->userRepository->getPaginatedUsers($request);
+        });
 
         return response()->json($result);
     }

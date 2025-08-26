@@ -30,7 +30,11 @@ class OrderController extends Controller
         }
 
         $user = request()->user();
-        $result = $this->orderRepository->getPaginatedOrders($request, $user);
+
+        $cacheKey = 'orders_' . $user->id . '_' . md5($request->fullUrl());
+        $result = Cache::remember($cacheKey, 180, function () use ($request, $user) {
+            return $this->orderRepository->getPaginatedOrders($request, $user);
+        });
 
         return response()->json($result);
     }
@@ -217,6 +221,9 @@ class OrderController extends Controller
 
         $order = Order::create($data);
 
+        // Очищаем кэш заказов после создания
+        $this->clearOrdersCache();
+
         // Обрабатываем назначения, если они есть
         if (isset($data['assignments']) && is_array($data['assignments'])) {
             // Получаем список выбранных стадий
@@ -273,7 +280,9 @@ class OrderController extends Controller
             }
         }
 
-        return response()->json($order->load('assignments.user'), 201);
+        // Используем with() вместо load() для предотвращения N+1 проблемы
+        $order = Order::with('assignments.user')->find($order->id);
+        return response()->json($order, 201);
     }
 
     public function update(Request $request, Order $order)
@@ -287,6 +296,9 @@ class OrderController extends Controller
             'deadline' => ['nullable', 'date'],
             'price' => 'nullable|numeric|min:0',
             'project_title' => 'nullable|string|max:255',
+            'stage' => 'sometimes|string',
+            'reason' => 'sometimes|string',
+            'reason_status' => 'sometimes|string',
             'assignments' => 'sometimes|array',
             'assignments.*.user_id' => 'required|exists:users,id',
             'assignments.*.role_type' => 'required|string',
@@ -314,7 +326,47 @@ class OrderController extends Controller
             }
         }
 
+        // Обрабатываем смену стадии на cancelled
+        if (isset($data['stage']) && $data['stage'] === 'cancelled') {
+            // Если reason и reason_status не переданы, используем дефолтные значения
+            $data['reason'] = $request->input('reason', 'Отменено через kanban');
+            $data['reason_status'] = $request->input('reason_status', 'refused');
+            $data['is_archived'] = true;
+            $data['archived_at'] = now();
+
+            // Находим стадию по имени
+            $stage = \App\Models\Stage::where('name', 'cancelled')->first();
+            if ($stage) {
+                $data['stage_id'] = $stage->id;
+            }
+        } elseif (isset($data['stage']) && in_array($data['stage'], ['completed', 'cancelled'])) {
+            // Для других завершающих стадий
+            $data['is_archived'] = true;
+            $data['archived_at'] = now();
+
+            // Находим стадию по имени
+            $stage = \App\Models\Stage::where('name', $data['stage'])->first();
+            if ($stage) {
+                $data['stage_id'] = $stage->id;
+            }
+        } elseif (isset($data['stage'])) {
+            // Для обычных стадий
+            $data['is_archived'] = false;
+            $data['archived_at'] = null;
+            $data['reason'] = null;
+            $data['reason_status'] = null;
+
+            // Находим стадию по имени
+            $stage = \App\Models\Stage::where('name', $data['stage'])->first();
+            if ($stage) {
+                $data['stage_id'] = $stage->id;
+            }
+        }
+
         $order->update($data);
+
+        // Очищаем кэш заказов после обновления
+        $this->clearOrdersCache();
 
         // Обрабатываем назначения, если они есть
         if (isset($data['assignments']) && is_array($data['assignments'])) {
@@ -376,7 +428,9 @@ class OrderController extends Controller
             }
         }
 
-        return response()->json($order->load('assignments.user'));
+        // Используем with() вместо load() для предотвращения N+1 проблемы
+        $order = Order::with('assignments.user')->find($order->id);
+        return response()->json($order);
     }
 
     public function updateStage(Request $request, Order $order)
@@ -407,12 +461,7 @@ class OrderController extends Controller
             }
         }
 
-        // Логируем для отладки
-        \Log::info('Обновление стадии заказа', [
-            'order_id' => $order->id,
-            'old_stage' => $oldStage ? $oldStage->name : 'null',
-            'new_stage' => $newStageName
-        ]);
+
         $product = $order->product;
 
         // Находим стадию по имени
@@ -422,12 +471,9 @@ class OrderController extends Controller
         }
 
         if ($newStageName == 'cancelled') {
-            $request->validate([
-                'reason' => 'required|string',
-                'reason_status' => 'required|in:refused,not_responding,defective_product'
-            ]);
-            $order->reason = $request->reason;
-            $order->reason_status = $request->reason_status;
+            // Если reason и reason_status не переданы, используем дефолтные значения
+            $order->reason = $request->input('reason', 'Отменено через kanban');
+            $order->reason_status = $request->input('reason_status', 'refused');
         } else {
             $order->reason = null;
             $order->reason_status = null;
@@ -444,6 +490,9 @@ class OrderController extends Controller
         $order->stage_id = $stage->id;
         $order->save();
         $order->refresh();
+
+        // Очищаем кэш заказов для всех пользователей после обновления стадии
+        $this->clearOrdersCache();
 
         // Создаем запись в логе изменений статуса
         \App\Models\OrderStatusLog::create([
@@ -509,11 +558,13 @@ class OrderController extends Controller
             }
         }
 
+        // Используем with() вместо load() для предотвращения N+1 проблемы
+        $order = Order::with(['project', 'product', 'client', 'assignments.user', 'stage'])->find($order->id);
         return response()->json([
             'message' => 'Статус обновлён',
             'stage' => $order->stage->name,
             'order_id' => $order->id,
-            'order' => $order->load(['project', 'product', 'client', 'assignments.user', 'stage'])
+            'order' => $order
         ]);
     }
 
@@ -524,6 +575,9 @@ class OrderController extends Controller
         }
 
         $order->delete();
+
+        // Очищаем кэш заказов после удаления
+        $this->clearOrdersCache();
 
         return response()->json(['message' => 'Заказ удалён']);
     }
@@ -611,5 +665,18 @@ class OrderController extends Controller
         }
 
         return !empty($assignedUsers);
+    }
+
+    /**
+     * Очищает кэш заказов для всех пользователей
+     */
+    private function clearOrdersCache()
+    {
+        try {
+            // Очищаем весь кэш (простой способ для file/array кэша)
+            Cache::flush();
+        } catch (\Exception $e) {
+            // Игнорируем ошибки очистки кэша
+        }
     }
 }

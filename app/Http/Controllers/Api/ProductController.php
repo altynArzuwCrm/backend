@@ -10,7 +10,6 @@ use Illuminate\Http\Request;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Cache;
-use Illuminate\Support\Facades\Log;
 use App\Http\Resources\ProductResource;
 
 class ProductController extends Controller
@@ -30,7 +29,11 @@ class ProductController extends Controller
             ], 403);
         }
 
-        $result = $this->productRepository->getPaginatedProducts($request);
+        // Кэшируем результаты поиска на 5 минут для быстрых ответов
+        $cacheKey = 'products_' . md5($request->fullUrl());
+        $result = Cache::remember($cacheKey, 300, function () use ($request) {
+            return $this->productRepository->getPaginatedProducts($request);
+        });
 
         return response()->json($result);
     }
@@ -62,9 +65,6 @@ class ProductController extends Controller
 
         $data = $request->validate([
             'name' => 'required|string|max:255',
-            'designer_id' => 'nullable|exists:users,id',
-            'print_operator_id' => 'nullable|exists:users,id',
-            'workshop_worker_id' => 'nullable|exists:users,id',
             'stages' => 'sometimes|array',
             'stages.*.stage_id' => 'required|exists:stages,id',
             'stages.*.is_available' => 'boolean',
@@ -75,8 +75,6 @@ class ProductController extends Controller
 
         // Assign custom stages if provided (auto-assignment happens in model boot)
         if (isset($data['stages'])) {
-            Log::info('Creating product with custom stages', ['product_id' => $product->id, 'stages' => $data['stages']]);
-
             // Remove auto-assigned stages first
             $product->productStages()->delete();
 
@@ -90,8 +88,6 @@ class ProductController extends Controller
                 ]);
             }
         } else {
-            Log::info('Creating product with default stages', ['product_id' => $product->id]);
-
             // If no stages provided, ensure all stages are available (for backward compatibility)
             $allStages = \App\Models\Stage::all();
             foreach ($allStages as $stage) {
@@ -102,7 +98,12 @@ class ProductController extends Controller
             }
         }
 
-        $product->load(['assignments.user', 'orders.assignments', 'availableStages.roles', 'productStages.stage.roles']);
+        // Используем with() вместо load() для предотвращения N+1 проблемы
+        $product = Product::with(['assignments.user', 'orders.assignments', 'availableStages.roles', 'productStages.stage.roles'])->find($product->id);
+
+        // Очищаем кэш продуктов после создания
+        Cache::forget('all_products');
+
         return response()->json(['data' => new ProductResource($product)], 201);
     }
 
@@ -128,9 +129,6 @@ class ProductController extends Controller
 
         $data = $request->validate([
             'name' => 'sometimes|string|max:255',
-            'designer_id' => 'nullable|exists:users,id',
-            'print_operator_id' => 'nullable|exists:users,id',
-            'workshop_worker_id' => 'nullable|exists:users,id',
             'stages' => 'sometimes|array',
             'stages.*.stage_id' => 'required|exists:stages,id',
             'stages.*.is_available' => 'boolean',
@@ -141,8 +139,6 @@ class ProductController extends Controller
 
         // Update stages if provided
         if (isset($data['stages'])) {
-            Log::info('Updating product stages', ['product_id' => $product->id, 'stages' => $data['stages']]);
-
             // Remove existing stage assignments
             $product->productStages()->delete();
 
@@ -156,8 +152,6 @@ class ProductController extends Controller
                 ]);
             }
         } else {
-            Log::info('No stages provided, using default stages', ['product_id' => $product->id]);
-
             // If no stages provided, ensure all stages are available (for backward compatibility)
             $allStages = \App\Models\Stage::all();
             foreach ($allStages as $stage) {
@@ -168,7 +162,13 @@ class ProductController extends Controller
             }
         }
 
-        $product->load(['assignments.user', 'orders.assignments', 'availableStages.roles', 'productStages.stage.roles']);
+        // Используем with() вместо load() для предотвращения N+1 проблемы
+        $product = Product::with(['assignments.user', 'orders.assignments', 'availableStages.roles', 'productStages.stage.roles'])->find($product->id);
+
+        // Очищаем кэш продуктов после обновления
+        Cache::forget('products_' . md5($request->fullUrl()));
+        Cache::forget('all_products');
+
         return new ProductResource($product);
     }
 
@@ -190,6 +190,9 @@ class ProductController extends Controller
         }
 
         $product->delete();
+
+        // Очищаем кэш продуктов после удаления
+        Cache::forget('all_products');
 
         return response()->json(['message' => 'Товар удалён']);
     }

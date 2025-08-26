@@ -29,6 +29,10 @@ class StatsController extends Controller
         return response()->json($stats);
     }
 
+    /**
+     * Получить выручку по месяцам
+     * ВАЖНО: Теперь используется общая сумма проектов и заказов, а не оплаченная сумма
+     */
     public function revenueByMonth(Request $request)
     {
         $user = $request->user();
@@ -39,14 +43,17 @@ class StatsController extends Controller
         }
 
         // Только админы и менеджеры могут видеть статистику выручки
-        if ($user->isStaff()) {
+        if (!$user->isAdminOrManager()) {
             return response()->json(['message' => 'Недостаточно прав'], 403);
         }
 
         $year = $request->get('year', Carbon::now()->year);
 
+        // Кэшируем данные о выручке на 1 минуту
+        // ВАЖНО: Теперь выручка считается по общей сумме, а не по оплаченной
         $revenueData = Cache::remember("revenue_by_month_{$year}", 60, function () use ($year) {
-            // Получаем выручку по месяцам из проектов
+            // Получаем выручку по месяцам из проектов (используем total_price - общую сумму)
+            // Это общая стоимость всех проектов, а не только оплаченных
             $monthlyRevenue = Project::selectRaw('
                 MONTH(created_at) as month,
                 SUM(total_price) as revenue
@@ -57,7 +64,8 @@ class StatsController extends Controller
                 ->get()
                 ->keyBy('month');
 
-            // Получаем выручку по месяцам из заказов (если проекты не связаны)
+            // Получаем выручку по месяцам из заказов (используем price - цену заказа)
+            // Это общая стоимость всех заказов, а не только оплаченных
             $monthlyOrderRevenue = Order::selectRaw('
                 MONTH(created_at) as month,
                 SUM(price) as revenue
@@ -70,6 +78,8 @@ class StatsController extends Controller
                 ->keyBy('month');
 
             // Объединяем данные
+            // ВАЖНО: Теперь выручка считается по общей сумме проектов и заказов, а не по оплаченным суммам
+            // Это дает полную картину потенциальной выручки компании
             $result = [];
             $totalRevenue = 0;
 
@@ -93,9 +103,11 @@ class StatsController extends Controller
                 'total_revenue' => $totalRevenue,
                 'total_revenue_formatted' => number_format($totalRevenue, 0, '.', ' '),
                 'year' => $year
+                // ВАЖНО: total_revenue теперь содержит общую сумму всех проектов и заказов
             ];
         });
 
+        // Возвращаем данные о выручке (общая сумма, а не оплаченная)
         return response()->json($revenueData);
     }
 

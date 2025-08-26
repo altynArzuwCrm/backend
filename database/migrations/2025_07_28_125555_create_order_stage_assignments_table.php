@@ -22,7 +22,6 @@ return new class extends Migration
             $table->unique(['order_assignment_id', 'stage_id']);
         });
 
-        // No migration needed since we're removing the old stage fields
     }
 
     /**

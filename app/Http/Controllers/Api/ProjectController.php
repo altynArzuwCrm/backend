@@ -58,7 +58,12 @@ class ProjectController extends Controller
         if (!in_array($perPage, $allowedPerPage)) {
             $perPage = 30;
         }
-        $projects = $query->paginate($perPage);
+
+        // Кэшируем результаты поиска на 5 минут для быстрых ответов
+        $cacheKey = 'projects_' . $user->id . '_' . md5($request->fullUrl());
+        $projects = Cache::remember($cacheKey, 300, function () use ($query, $perPage) {
+            return $query->paginate($perPage);
+        });
 
         return response()->json($projects);
     }

@@ -15,14 +15,16 @@ class DatabaseSeeder extends Seeder
             RoleSeeder::class,
             UserSeeder::class,
             StageSeeder::class,
+            StageRoleSeeder::class,
             ClientSeeder::class,
             ClientContactSeeder::class,
             ProjectSeeder::class,
             ProductSeeder::class,
+            ProductStageSeeder::class,
             OrderSeeder::class,
-            AuditLogSeeder::class,
             OrderAssignmentSeeder::class,
             ProductAssignmentSeeder::class,
+            AuditLogSeeder::class,
         ]);
     }
 }

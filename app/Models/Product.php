@@ -11,9 +11,7 @@ class Product extends Model
 
     protected $fillable = [
         'name',
-        'designer_id',
-        'print_operator_id',
-        'workshop_worker_id'
+        'description'
     ];
 
     protected $casts = [
@@ -41,19 +39,6 @@ class Product extends Model
                 }
             }
         });
-    }
-
-    public function designer()
-    {
-        return $this->belongsTo(User::class, 'designer_id');
-    }
-    public function printOperator()
-    {
-        return $this->belongsTo(User::class, 'print_operator_id');
-    }
-    public function workshopWorker()
-    {
-        return $this->belongsTo(User::class, 'workshop_worker_id');
     }
 
     public function orders()
@@ -88,62 +73,6 @@ class Product extends Model
     public function assignments()
     {
         return $this->hasMany(ProductAssignment::class);
-    }
-
-    public function designerAssignments()
-    {
-        return $this->hasMany(ProductAssignment::class)->where('role_type', 'designer');
-    }
-
-    public function printOperatorAssignments()
-    {
-        return $this->hasMany(ProductAssignment::class)->where('role_type', 'print_operator');
-    }
-
-    public function workshopWorkerAssignments()
-    {
-        return $this->hasMany(ProductAssignment::class)->where('role_type', 'workshop_worker');
-    }
-
-    public function engravingOperatorAssignments()
-    {
-        return $this->hasMany(ProductAssignment::class)->where('role_type', 'engraving_operator');
-    }
-
-    public function getDesigners()
-    {
-        return $this->designerAssignments()
-            ->where('is_active', true)
-            ->with('user')
-            ->get()
-            ->pluck('user');
-    }
-
-    public function getPrintOperators()
-    {
-        return $this->printOperatorAssignments()
-            ->where('is_active', true)
-            ->with('user')
-            ->get()
-            ->pluck('user');
-    }
-
-    public function getWorkshopWorkers()
-    {
-        return $this->workshopWorkerAssignments()
-            ->where('is_active', true)
-            ->with('user')
-            ->get()
-            ->pluck('user');
-    }
-
-    public function getEngravingOperators()
-    {
-        return $this->engravingOperatorAssignments()
-            ->where('is_active', true)
-            ->with('user')
-            ->get()
-            ->pluck('user');
     }
 
     public function getNextAvailableUser($roleType, $excludeUserIds = [])

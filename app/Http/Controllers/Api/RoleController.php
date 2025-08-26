@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Role;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Validation\Rule;
 
 class RoleController extends Controller
@@ -16,7 +17,11 @@ class RoleController extends Controller
             abort(403, 'Доступ запрещён');
         }
 
-        $roles = Role::withCount('users')->with('stages')->orderBy('display_name')->get();
+        // Кэшируем роли на 30 минут для быстрых ответов
+        $roles = Cache::remember('roles_with_users_and_stages', 1800, function () {
+            return Role::withCount('users')->with('stages')->orderBy('display_name')->get();
+        });
+
         return response()->json($roles);
     }
 

@@ -10,7 +10,6 @@ class StageDTO
         public ?string $display_name,
         public ?string $color,
         public int $order,
-        public ?bool $is_active,
         public ?string $created_at,
         public ?string $updated_at,
         public array $roles = []
@@ -24,7 +23,6 @@ class StageDTO
             display_name: $stage->display_name,
             color: $stage->color,
             order: $stage->order,
-            is_active: $stage->is_active ?? false,
             created_at: $stage->created_at ? (is_string($stage->created_at) ? $stage->created_at : $stage->created_at->toISOString()) : null,
             updated_at: $stage->updated_at ? (is_string($stage->updated_at) ? $stage->updated_at : $stage->updated_at->toISOString()) : null,
             roles: $stage->roles ? array_map([RoleDTO::class, 'fromModel'], $stage->roles->all()) : []
@@ -39,7 +37,6 @@ class StageDTO
             'display_name' => $this->display_name,
             'color' => $this->color,
             'order' => $this->order,
-            'is_active' => $this->is_active,
             'created_at' => $this->created_at,
             'updated_at' => $this->updated_at,
             'roles' => array_map(fn($role) => $role->toArray(), $this->roles)

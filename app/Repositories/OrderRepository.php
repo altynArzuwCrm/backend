@@ -113,21 +113,25 @@ class OrderRepository
 
     public function getOrderById(int $id): ?OrderDTO
     {
-        $order = Order::with([
-            'project',
-            'product',
-            'client.contacts',
-            'stage',
-            'assignments.user.roles',
-            'assignments.assignedBy',
-            'assignments.assignedStages'
-        ])->find($id);
+        // Кэшируем отдельные заказы на 10 минут
+        $cacheKey = 'order_' . $id;
+        return Cache::remember($cacheKey, 600, function () use ($id) {
+            $order = Order::with([
+                'project',
+                'product',
+                'client.contacts',
+                'stage',
+                'assignments.user.roles',
+                'assignments.assignedBy',
+                'assignments.assignedStages'
+            ])->find($id);
 
-        if (!$order) {
-            return null;
-        }
+            if (!$order) {
+                return null;
+            }
 
-        return OrderDTO::fromModel($order);
+            return OrderDTO::fromModel($order);
+        });
     }
 
     public function createOrder(array $data): OrderDTO

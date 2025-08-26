@@ -14,9 +14,6 @@ return new class extends Migration
         Schema::create('products', function (Blueprint $table) {
             $table->id();
             $table->string('name');
-            $table->boolean('has_design_stage')->default(false);
-            $table->boolean('has_print_stage')->default(false);
-            $table->boolean('has_workshop_stage')->default(false);
             $table->timestamps();
         });
     }

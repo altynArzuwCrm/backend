@@ -29,4 +29,4 @@ class NotificationController extends Controller
         $request->user()->unreadNotifications->markAsRead();
         return response()->json(['status' => 'ok']);
     }
-} 
+}

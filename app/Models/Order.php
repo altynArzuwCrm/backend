@@ -23,9 +23,6 @@ class Order extends Model
         'reason_status',
         'archived_at',
         'is_archived',
-        'designer_id',
-        'print_operator_id',
-        'workshop_worker_id',
     ];
 
     protected $casts = [

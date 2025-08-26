@@ -13,11 +13,6 @@ class ProductDTO
         public int $id,
         public string $name,
         public ?string $description,
-        public ?string $engraving_text,
-        public ?string $engraving_font,
-        public ?string $engraving_size,
-        public ?string $engraving_color,
-        public ?string $engraving_position,
         public ?bool $is_active,
         public ?string $created_at,
         public ?string $updated_at,
@@ -31,11 +26,6 @@ class ProductDTO
             id: $product->id,
             name: $product->name,
             description: $product->description,
-            engraving_text: $product->engraving_text,
-            engraving_font: $product->engraving_font,
-            engraving_size: $product->engraving_size,
-            engraving_color: $product->engraving_color,
-            engraving_position: $product->engraving_position,
             is_active: $product->is_active ?? false,
             created_at: $product->created_at ? (is_string($product->created_at) ? $product->created_at : $product->created_at->toISOString()) : null,
             updated_at: $product->updated_at ? (is_string($product->updated_at) ? $product->updated_at : $product->updated_at->toISOString()) : null,
@@ -50,11 +40,6 @@ class ProductDTO
             'id' => $this->id,
             'name' => $this->name,
             'description' => $this->description,
-            'engraving_text' => $this->engraving_text,
-            'engraving_font' => $this->engraving_font,
-            'engraving_size' => $this->engraving_size,
-            'engraving_color' => $this->engraving_color,
-            'engraving_position' => $this->engraving_position,
             'is_active' => $this->is_active,
             'created_at' => $this->created_at,
             'updated_at' => $this->updated_at,
@@ -79,26 +64,6 @@ class ProductDTO
         // Валидация описания
         if (isset($data['description']) && strlen($data['description']) > 1000) {
             $errors['description'] = 'Описание не может быть длиннее 1000 символов';
-        }
-
-        // Валидация полей гравировки
-        if (isset($data['engraving_text']) && strlen($data['engraving_text']) > 500) {
-            $errors['engraving_text'] = 'Текст гравировки не может быть длиннее 500 символов';
-        }
-
-        $validFonts = ['Arial', 'Times New Roman', 'Helvetica', 'Georgia', 'Verdana'];
-        if (isset($data['engraving_font']) && !in_array($data['engraving_font'], $validFonts)) {
-            $errors['engraving_font'] = 'Неверный шрифт';
-        }
-
-        $validSizes = ['small', 'medium', 'large'];
-        if (isset($data['engraving_size']) && !in_array($data['engraving_size'], $validSizes)) {
-            $errors['engraving_size'] = 'Неверный размер';
-        }
-
-        $validPositions = ['top', 'bottom', 'left', 'right', 'center'];
-        if (isset($data['engraving_position']) && !in_array($data['engraving_position'], $validPositions)) {
-            $errors['engraving_position'] = 'Неверная позиция';
         }
 
         return $errors;

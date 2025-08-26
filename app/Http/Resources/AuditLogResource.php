@@ -17,9 +17,6 @@ class AuditLogResource extends JsonResource
         // Карта переводов для ключей
         $fieldTranslations = [
             'total_price' => 'Общая сумма',
-            'designer_id' => 'Дизайнер',
-            'print_operator_id' => 'Печатник',
-            'workshop_worker_id' => 'Работник цеха',
             'text' => 'Комментарий',
             'order_id' => 'Заказ',
             'client_id' => 'Клиент',
@@ -76,4 +73,4 @@ class AuditLogResource extends JsonResource
             }),
         ];
     }
-} 
+}

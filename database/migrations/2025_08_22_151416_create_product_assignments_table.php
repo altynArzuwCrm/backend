@@ -3,7 +3,6 @@
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
-use Illuminate\Support\Facades\DB;
 
 return new class extends Migration
 {
@@ -12,15 +11,17 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::create('product_stages', function (Blueprint $table) {
+        Schema::create('product_assignments', function (Blueprint $table) {
             $table->id();
             $table->foreignId('product_id')->constrained()->cascadeOnDelete();
-            $table->foreignId('stage_id')->constrained()->cascadeOnDelete();
-            $table->boolean('is_available')->default(true);
-            $table->boolean('is_default')->default(false);
+            $table->foreignId('user_id')->constrained()->cascadeOnDelete();
+            $table->string('role_type', 50); // designer, print_operator, engraving_operator, workshop_worker
+            $table->boolean('is_active')->default(true);
             $table->timestamps();
 
-            $table->unique(['product_id', 'stage_id']);
+            // Индексы
+            $table->index(['product_id', 'role_type']);
+            $table->index('is_active');
         });
     }
 
@@ -29,6 +30,6 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::dropIfExists('product_stages');
+        Schema::dropIfExists('product_assignments');
     }
 };

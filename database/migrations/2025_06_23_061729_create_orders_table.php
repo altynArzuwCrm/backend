@@ -17,6 +17,7 @@ return new class extends Migration
             $table->foreignId('client_id')->constrained()->cascadeOnDelete();
             $table->foreignId('project_id')->nullable()->constrained()->nullOnDelete();
             $table->foreignId('product_id')->constrained()->cascadeOnDelete();
+            $table->foreignId('stage_id')->constrained()->cascadeOnDelete();
             $table->unsignedInteger('quantity')->default(1);
             $table->timestamp('deadline')->nullable();
             $table->decimal('price', 10, 2)->nullable();
@@ -25,6 +26,9 @@ return new class extends Migration
             $table->timestamp('archived_at')->nullable();
             $table->boolean('is_archived')->default(false)->nullable();
             $table->timestamps();
+
+            // Индексы
+            $table->index('stage_id');
         });
     }
 

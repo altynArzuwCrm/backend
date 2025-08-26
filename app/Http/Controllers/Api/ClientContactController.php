@@ -16,8 +16,8 @@ class ClientContactController extends Controller
             abort(403, 'Доступ запрещён');
         }
         $data = $request->validate([
-           'type' => 'required|in:phone,email,telegram,whatsapp,instagram,other',
-           'value' => 'required|string|max:255',
+            'type' => 'required|in:phone,email,telegram,whatsapp,instagram,other',
+            'value' => 'required|string|max:255',
         ]);
 
         $contact = $client->contacts()->create($data);

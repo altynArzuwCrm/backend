@@ -2,8 +2,8 @@
 
 namespace Database\Seeders;
 
-use App\Models\Role;
 use Illuminate\Database\Seeder;
+use Illuminate\Support\Facades\DB;
 
 class RoleSeeder extends Seeder
 {
@@ -12,54 +12,37 @@ class RoleSeeder extends Seeder
      */
     public function run(): void
     {
-        // Проверяем, есть ли уже роли в базе данных
-        if (Role::count() > 0) {
-            $this->command->info('Roles already exist. Skipping role creation.');
-            return;
-        }
-
+        // Добавляем базовые роли
         $roles = [
-            [
-                'name' => 'admin',
-                'display_name' => 'Администратор',
-                'description' => 'Полный доступ к системе со всеми разрешениями'
-            ],
-            [
-                'name' => 'manager',
-                'display_name' => 'Менеджер',
-                'description' => 'Доступ к управлению с большинством разрешений'
-            ],
-            [
-                'name' => 'designer',
-                'display_name' => 'Дизайнер',
-                'description' => 'Роль дизайнера для работы с дизайном заказов'
-            ],
-            [
-                'name' => 'print_operator',
-                'display_name' => 'Оператор печати',
-                'description' => 'Роль оператора печати для работы с печатью'
-            ],
-            [
-                'name' => 'workshop_worker',
-                'display_name' => 'Работник цеха',
-                'description' => 'Роль работника цеха для работы в цехе'
-            ],
-            [
-                'name' => 'engraving_operator',
-                'display_name' => 'Оператор гравировки',
-                'description' => 'Роль оператора гравировки для работы с гравировкой'
-            ],
-            [
-                'name' => 'bukhgalter',
-                'display_name' => 'Бухгалтер',
-                'description' => 'Роль бухгалтера для финансовых операций'
-            ]
+            ['name' => 'admin', 'display_name' => 'Администратор', 'description' => 'Полный доступ к системе'],
+            ['name' => 'manager', 'display_name' => 'Менеджер', 'description' => 'Управление заказами и клиентами'],
+            ['name' => 'designer', 'display_name' => 'Дизайнер', 'description' => 'Создание дизайнов'],
+            ['name' => 'print_operator', 'display_name' => 'Оператор печати', 'description' => 'Печать продукции'],
+            ['name' => 'workshop_worker', 'display_name' => 'Работник цеха', 'description' => 'Производство продукции'],
+            ['name' => 'engraving_operator', 'display_name' => 'Оператор гравировки', 'description' => 'Гравировка на продукции'],
+            ['name' => 'bukhgalter', 'display_name' => 'Бухгалтер', 'description' => 'Финансовый учет'],
         ];
 
-        foreach ($roles as $roleData) {
-            Role::create($roleData);
+        foreach ($roles as $role) {
+            DB::table('roles')->updateOrInsert(
+                ['name' => $role['name']],
+                $role
+            );
         }
 
-        $this->command->info('Roles created successfully.');
+        // Назначаем роль admin первому пользователю по умолчанию
+        $firstUser = DB::table('users')->first();
+        if ($firstUser) {
+            $adminRoleId = DB::table('roles')->where('name', 'admin')->value('id');
+            if ($adminRoleId) {
+                DB::table('user_roles')->updateOrInsert(
+                    ['user_id' => $firstUser->id, 'role_id' => $adminRoleId],
+                    [
+                        'created_at' => now(),
+                        'updated_at' => now(),
+                    ]
+                );
+            }
+        }
     }
 }

@@ -52,7 +52,12 @@ class ClientController extends Controller
         if (!in_array($perPage, $allowedPerPage)) {
             $perPage = 30;
         }
-        $clients = $query->paginate($perPage);
+
+        // Кэшируем результаты поиска на 5 минут для быстрых ответов
+        $cacheKey = 'clients_' . $user->id . '_' . md5($request->fullUrl());
+        $clients = Cache::remember($cacheKey, 300, function () use ($query, $perPage) {
+            return $query->paginate($perPage);
+        });
 
         return response()->json($clients, 200);
     }
@@ -86,8 +91,8 @@ class ClientController extends Controller
             abort(403, 'Доступ запрещён');
         }
 
-        // Загружаем контакты клиента
-        $client->load('contacts');
+        // Используем with() вместо load() для предотвращения N+1 проблемы
+        $client = Client::with('contacts')->find($client->id);
         return response()->json($client);
     }
 
@@ -120,8 +125,8 @@ class ClientController extends Controller
             }
         }
 
-        // Возвращаем клиента с контактами
-        $client->load('contacts');
+        // Используем with() вместо load() для предотвращения N+1 проблемы
+        $client = Client::with('contacts')->find($client->id);
         return response()->json(['data' => $client], 201);
     }
 
@@ -161,8 +166,8 @@ class ClientController extends Controller
             }
         }
 
-        // Возвращаем клиента с обновленными контактами
-        $client->load('contacts');
+        // Используем with() вместо load() для предотвращения N+1 проблемы
+        $client = Client::with('contacts')->find($client->id);
         return response()->json($client);
     }
 

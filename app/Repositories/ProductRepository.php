@@ -6,6 +6,7 @@ use App\Models\Product;
 use App\DTOs\ProductDTO;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 
 class ProductRepository
 {
@@ -67,13 +68,17 @@ class ProductRepository
 
     public function getProductById(int $id): ?ProductDTO
     {
-        $product = Product::with(['assignments.user', 'orders.assignments', 'availableStages.roles', 'productStages.stage.roles'])->find($id);
+        // Кэшируем отдельные продукты на 15 минут
+        $cacheKey = 'product_' . $id;
+        return Cache::remember($cacheKey, 900, function () use ($id) {
+            $product = Product::with(['assignments.user', 'orders.assignments', 'availableStages.roles', 'productStages.stage.roles'])->find($id);
 
-        if (!$product) {
-            return null;
-        }
+            if (!$product) {
+                return null;
+            }
 
-        return ProductDTO::fromModel($product);
+            return ProductDTO::fromModel($product);
+        });
     }
 
     public function createProduct(array $data): ProductDTO

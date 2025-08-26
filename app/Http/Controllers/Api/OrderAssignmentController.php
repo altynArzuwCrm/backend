@@ -79,7 +79,7 @@ class OrderAssignmentController extends Controller
             $availableRoles = ['designer', 'print_operator', 'workshop_worker', 'engraving_operator'];
         }
 
-        if (!$user->hasAnyRole($availableRoles)) {
+        if (!$user->roles()->whereIn('name', $availableRoles)->exists()) {
             return response()->json([
                 'message' => 'User must have one of the following roles: ' . implode(', ', $availableRoles),
             ], 422);
@@ -107,7 +107,7 @@ class OrderAssignmentController extends Controller
         try {
             $user->notify(new OrderAssigned($order, Auth::user()));
         } catch (\Exception $e) {
-            \Log::error('Failed to send OrderAssigned notification', [
+            Log::error('Failed to send OrderAssigned notification', [
                 'user_id' => $user->id,
                 'order_id' => $order->id,
                 'error' => $e->getMessage()
@@ -200,7 +200,7 @@ class OrderAssignmentController extends Controller
                 }
 
                 // Отправка уведомления
-                \Log::info('Sending OrderAssigned notification (bulk)', [
+                Log::info('Sending OrderAssigned notification (bulk)', [
                     'user_id' => $user->id,
                     'user_name' => $user->name,
                     'order_id' => $order->id,
@@ -210,12 +210,12 @@ class OrderAssignmentController extends Controller
 
                 try {
                     $user->notify(new OrderAssigned($order, Auth::user()));
-                    \Log::info('OrderAssigned notification sent successfully (bulk)', [
+                    Log::info('OrderAssigned notification sent successfully (bulk)', [
                         'user_id' => $user->id,
                         'order_id' => $order->id
                     ]);
                 } catch (\Exception $e) {
-                    \Log::error('Failed to send OrderAssigned notification (bulk)', [
+                    Log::error('Failed to send OrderAssigned notification (bulk)', [
                         'user_id' => $user->id,
                         'order_id' => $order->id,
                         'error' => $e->getMessage()
@@ -420,11 +420,29 @@ class OrderAssignmentController extends Controller
 
     public function updateStatus(Request $request, OrderAssignment $assignment)
     {
+        Log::info('OrderAssignmentController@updateStatus called', [
+            'assignment_id' => $assignment->id,
+            'user_id' => Auth::user()->id,
+            'user_roles' => Auth::user()->roles->pluck('name')->toArray(),
+            'request_status' => $request->status,
+            'current_assignment_status' => $assignment->status
+        ]);
+
         if (Gate::denies('updateStatus', $assignment)) {
+            Log::warning('OrderAssignmentController@updateStatus - Access denied', [
+                'assignment_id' => $assignment->id,
+                'user_id' => Auth::user()->id,
+                'user_roles' => Auth::user()->roles->pluck('name')->toArray()
+            ]);
             return response()->json([
                 'message' => 'Forbidden'
             ], 403);
         }
+
+        Log::info('OrderAssignmentController@updateStatus - Access granted', [
+            'assignment_id' => $assignment->id,
+            'user_id' => Auth::user()->id
+        ]);
 
         $request->validate([
             'status' => 'required|in:pending,in_progress,cancelled,under_review,approved',
@@ -436,6 +454,11 @@ class OrderAssignmentController extends Controller
         $newStatus = $request->status;
 
         if ($user->hasRole('manager') && $newStatus !== 'approved') {
+            Log::warning('OrderAssignmentController@updateStatus - Manager cannot change status to non-approved', [
+                'assignment_id' => $assignment->id,
+                'user_id' => $user->id,
+                'requested_status' => $newStatus
+            ]);
             return response()->json([
                 'message' => 'Менеджер может менять статус только на "одобрено"'
             ], 403);
@@ -443,10 +466,17 @@ class OrderAssignmentController extends Controller
 
         $oldStatus = $assignment->status;
         $assignment->status = $request->status;
+
+        Log::info('OrderAssignmentController@updateStatus - Saving assignment', [
+            'assignment_id' => $assignment->id,
+            'old_status' => $oldStatus,
+            'new_status' => $assignment->status
+        ]);
+
         $assignment->save();
 
         if ($oldStatus !== $assignment->status) {
-            \Log::info('Статус назначения изменился', [
+            Log::info('Статус назначения изменился', [
                 'assignment_id' => $assignment->id,
                 'old_status' => $oldStatus,
                 'new_status' => $assignment->status
@@ -455,15 +485,27 @@ class OrderAssignmentController extends Controller
             $adminsAndManagers = \App\Models\User::whereHas('roles', function ($q) {
                 $q->whereIn('name', ['admin', 'manager']);
             })->get();
-            \Log::info('Найдено админов и менеджеров: ' . $adminsAndManagers->count());
+            Log::info('Найдено админов и менеджеров: ' . $adminsAndManagers->count());
 
             foreach ($adminsAndManagers as $admin) {
-                \Log::info('Отправляем уведомление пользователю', [
+                Log::info('Отправляем уведомление пользователю', [
                     'user_id' => $admin->id,
                     'username' => $admin->username,
                     'role' => $admin->role
                 ]);
-                $admin->notify(new \App\Notifications\AssignmentStatusChanged($assignment, auth()->user()));
+                try {
+                    $admin->notify(new \App\Notifications\AssignmentStatusChanged($assignment, auth()->user()));
+                    Log::info('Уведомление отправлено успешно', [
+                        'admin_id' => $admin->id,
+                        'assignment_id' => $assignment->id
+                    ]);
+                } catch (\Exception $e) {
+                    Log::error('Ошибка отправки уведомления', [
+                        'admin_id' => $admin->id,
+                        'assignment_id' => $assignment->id,
+                        'error' => $e->getMessage()
+                    ]);
+                }
             }
         }
 
@@ -495,6 +537,11 @@ class OrderAssignmentController extends Controller
             }
         }
 
+        Log::info('OrderAssignmentController@updateStatus - Success', [
+            'assignment_id' => $assignment->id,
+            'response' => $response
+        ]);
+
         return response()->json($response);
     }
 
@@ -524,7 +571,7 @@ class OrderAssignmentController extends Controller
         if ($assignment->status == 'cancelled') {
             $assignedUser = $assignment->user;
             if ($assignedUser) {
-                \Log::info('Отправляем уведомление об удалении назначения', [
+                Log::info('Отправляем уведомление об удалении назначения', [
                     'user_id' => $assignedUser->id,
                     'username' => $assignedUser->username,
                     'assignment_id' => $assignment->id,
@@ -565,7 +612,7 @@ class OrderAssignmentController extends Controller
         }
 
         // Проверяем, есть ли у пользователя нужная роль
-        if (!$user->hasRole($data['role_type'])) {
+        if (!$user->roles()->where('name', $data['role_type'])->exists()) {
             return response()->json([
                 'message' => 'Пользователь не имеет роль: ' . $data['role_type'],
             ], 422);

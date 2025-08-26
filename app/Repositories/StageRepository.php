@@ -22,11 +22,7 @@ class StageRepository
             });
         }
 
-        // Фильтр по активности
-        if ($request->filled('is_active')) {
-            $isActive = $request->boolean('is_active');
-            $query->where('is_active', $isActive);
-        }
+
 
         // Сортировка
         $sortBy = $request->get('sort_by', 'order');
@@ -87,7 +83,6 @@ class StageRepository
     public function getActiveStages(): array
     {
         $stages = Stage::with(['roles'])
-            ->where('is_active', true)
             ->orderBy('order')
             ->get();
         return array_map([StageDTO::class, 'fromModel'], $stages->toArray());
