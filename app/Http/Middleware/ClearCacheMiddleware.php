@@ -32,30 +32,37 @@ class ClearCacheMiddleware
     private function clearRelevantCache(Request $request): void
     {
         $path = $request->path();
+        $method = $request->method();
 
-        if (str_contains($path, 'stages') !== false) {
+        // Очищаем кэш стадий только при операциях изменения (не при GET запросах)
+        if (str_contains($path, 'stages') !== false && in_array($method, ['POST', 'PUT', 'PATCH', 'DELETE'])) {
             Cache::forget('stages_with_roles');
+            Cache::forget('stages_cache');
         }
 
-        if (str_contains($path, 'products') !== false) {
-            // Очищаем все кэши продуктов
+        // Очищаем кэш продуктов только при операциях изменения
+        if (str_contains($path, 'products') !== false && in_array($method, ['POST', 'PUT', 'PATCH', 'DELETE'])) {
             $this->clearProductCache();
         }
 
-        if (str_contains($path, 'users') !== false) {
-            // Очищаем все кэши пользователей
+        // Очищаем кэш пользователей только при операциях изменения
+        if (str_contains($path, 'users') !== false && in_array($method, ['POST', 'PUT', 'PATCH', 'DELETE'])) {
             $this->clearUserCache();
         }
 
-        if (str_contains($path, 'orders') !== false) {
-            // Очищаем кэш заказов
+        // Очищаем кэш заказов только при операциях изменения
+        if (str_contains($path, 'orders') !== false && in_array($method, ['POST', 'PUT', 'PATCH', 'DELETE'])) {
             $this->clearOrderCache();
         }
     }
 
     private function clearProductCache(): void
     {
-        // Очищаем все кэши продуктов (можно улучшить, если знать точные ключи)
+        // Очищаем конкретные кэши продуктов
+        Cache::forget('all_products');
+        Cache::forget('products_cache');
+
+        // Очищаем кэши поиска продуктов
         $keys = Cache::get('product_cache_keys', []);
         foreach ($keys as $key) {
             Cache::forget($key);

@@ -37,6 +37,10 @@ class StatsController extends Controller
     {
         $user = $request->user();
 
+        if (!$user) {
+            return response()->json(['message' => 'Unauthenticated'], 401);
+        }
+
         // Проверяем права доступа
         if (!$user->is_active) {
             return response()->json(['message' => 'Ваш аккаунт деактивирован'], 403);
@@ -114,6 +118,10 @@ class StatsController extends Controller
     public function dashboard(Request $request)
     {
         $user = $request->user();
+
+        if (!$user) {
+            return response()->json(['message' => 'Unauthenticated'], 401);
+        }
 
         // Проверяем права доступа
         if (!$user->is_active) {
