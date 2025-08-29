@@ -7,6 +7,7 @@ use App\Models\User;
 use App\Models\Order;
 use App\Models\Client;
 use App\Models\Project;
+use App\Services\CacheService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Cache;
@@ -16,16 +17,21 @@ class StatsController extends Controller
 {
     public function index()
     {
-        $stats = Cache::remember('stats_main', 10, function () {
-            $users = User::count();
-            $orders = Order::count();
-            $newClients = Client::where('created_at', '>=', Carbon::now()->subDays(30))->count();
-            return [
-                'users' => $users,
-                'orders' => $orders,
-                'newClients' => $newClients,
-            ];
-        });
+        $stats = CacheService::rememberWithTags(
+            CacheService::PATTERN_STATS_MAIN,
+            10, // 10 секунд
+            function () {
+                $users = User::count();
+                $orders = Order::count();
+                $newClients = Client::where('created_at', '>=', Carbon::now()->subDays(30))->count();
+                return [
+                    'users' => $users,
+                    'orders' => $orders,
+                    'newClients' => $newClients,
+                ];
+            },
+            [CacheService::TAG_STATS]
+        );
         return response()->json($stats);
     }
 

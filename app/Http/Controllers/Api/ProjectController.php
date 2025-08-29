@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Project;
 use App\Models\Order;
 use App\Models\OrderAssignment;
+use App\Services\CacheService;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
@@ -61,9 +62,9 @@ class ProjectController extends Controller
 
         // Кэшируем результаты поиска на 5 минут для быстрых ответов
         $cacheKey = 'projects_' . $user->id . '_' . md5($request->fullUrl());
-        $projects = Cache::remember($cacheKey, 300, function () use ($query, $perPage) {
+        $projects = CacheService::rememberWithTags($cacheKey, 300, function () use ($query, $perPage) {
             return $query->paginate($perPage);
-        });
+        }, [CacheService::TAG_PROJECTS]);
 
         return response()->json($projects);
     }
@@ -179,9 +180,9 @@ class ProjectController extends Controller
             abort(403, 'Доступ запрещён');
         }
 
-        $projects = Cache::remember('all_projects', 60, function () {
+        $projects = CacheService::rememberWithTags('all_projects', 60, function () {
             return Project::orderBy('id')->get();
-        });
+        }, [CacheService::TAG_PROJECTS]);
         return $projects;
     }
 

@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Client;
+use App\Services\CacheService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Cache;
@@ -55,9 +56,9 @@ class ClientController extends Controller
 
         // Кэшируем результаты поиска на 5 минут для быстрых ответов
         $cacheKey = 'clients_' . $user->id . '_' . md5($request->fullUrl());
-        $clients = Cache::remember($cacheKey, 300, function () use ($query, $perPage) {
+        $clients = CacheService::rememberWithTags($cacheKey, 300, function () use ($query, $perPage) {
             return $query->paginate($perPage);
-        });
+        }, [CacheService::TAG_CLIENTS]);
 
         return response()->json($clients, 200);
     }
@@ -70,7 +71,7 @@ class ClientController extends Controller
 
         $user = request()->user();
         $cacheKey = 'clients_for_user_' . $user->id . '_roles_' . $user->roles->pluck('name')->implode('-');
-        $clients = Cache::remember($cacheKey, 60, function () use ($user) {
+        $clients = CacheService::rememberWithTags($cacheKey, 60, function () use ($user) {
             $query = Client::with('contacts');
             if (!$user->hasAnyRole(['admin', 'manager'])) {
                 $assignedClientIds = \App\Models\OrderAssignment::query()
@@ -81,7 +82,7 @@ class ClientController extends Controller
                 $query->whereIn('id', $assignedClientIds);
             }
             return $query->orderBy('id')->get();
-        });
+        }, [CacheService::TAG_CLIENTS]);
         return $clients;
     }
 
@@ -254,7 +255,7 @@ class ClientController extends Controller
 
         $client->delete();
 
-        Cache::flush();
+        CacheService::invalidateClientCaches($client->id);
 
         Log::info('Client deleted successfully', [
             'client_id' => $client->id

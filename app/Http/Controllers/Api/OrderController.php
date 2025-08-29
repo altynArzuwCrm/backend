@@ -8,6 +8,7 @@ use App\Models\OrderAssignment;
 use App\Models\OrderStatusLog;
 use App\Repositories\OrderRepository;
 use App\DTOs\OrderDTO;
+use App\Services\CacheService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Log;
@@ -32,9 +33,9 @@ class OrderController extends Controller
         $user = request()->user();
 
         $cacheKey = 'orders_' . $user->id . '_' . md5($request->fullUrl());
-        $result = Cache::remember($cacheKey, 180, function () use ($request, $user) {
+        $result = CacheService::rememberWithTags($cacheKey, 180, function () use ($request, $user) {
             return $this->orderRepository->getPaginatedOrders($request, $user);
-        });
+        }, [CacheService::TAG_ORDERS]);
 
         return response()->json($result);
     }
@@ -673,8 +674,8 @@ class OrderController extends Controller
     private function clearOrdersCache()
     {
         try {
-            // Очищаем весь кэш (простой способ для file/array кэша)
-            Cache::flush();
+            // Очищаем кэш заказов
+            CacheService::invalidateOrderCaches();
         } catch (\Exception $e) {
             // Игнорируем ошибки очистки кэша
         }

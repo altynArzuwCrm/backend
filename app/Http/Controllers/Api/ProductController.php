@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Product;
 use App\Repositories\ProductRepository;
 use App\DTOs\ProductDTO;
+use App\Services\CacheService;
 use Illuminate\Http\Request;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\Gate;
@@ -31,9 +32,9 @@ class ProductController extends Controller
 
         // Кэшируем результаты поиска на 5 минут для быстрых ответов
         $cacheKey = 'products_' . md5($request->fullUrl());
-        $result = Cache::remember($cacheKey, 300, function () use ($request) {
+        $result = CacheService::rememberWithTags($cacheKey, 300, function () use ($request) {
             return $this->productRepository->getPaginatedProducts($request);
-        });
+        }, [CacheService::TAG_PRODUCTS]);
 
         return response()->json($result);
     }
@@ -102,7 +103,7 @@ class ProductController extends Controller
         $product = Product::with(['assignments.user', 'orders.assignments', 'availableStages.roles', 'productStages.stage.roles'])->find($product->id);
 
         // Очищаем кэш продуктов после создания
-        Cache::forget('all_products');
+        CacheService::invalidateProductCaches();
 
         return response()->json(['data' => new ProductResource($product)], 201);
     }
@@ -113,11 +114,13 @@ class ProductController extends Controller
             abort(403, 'Доступ запрещён');
         }
 
-        $products = Cache::remember('all_products', 60, function () {
-            return Product::with(['assignments.user', 'orders.assignments', 'availableStages.roles', 'productStages.stage.roles'])->orderBy('id')->get();
-        });
-        return ProductResource::collection($products);
+        $products = CacheService::rememberWithTags('all_products', 60, function () {
+            return Product::select('id', 'name', 'created_at')->orderBy('id')->get();
+        }, [CacheService::TAG_PRODUCTS]);
+        return response()->json($products);
     }
+
+
 
     public function update(Request $request, Product $product)
     {
@@ -166,8 +169,7 @@ class ProductController extends Controller
         $product = Product::with(['assignments.user', 'orders.assignments', 'availableStages.roles', 'productStages.stage.roles'])->find($product->id);
 
         // Очищаем кэш продуктов после обновления
-        Cache::forget('products_' . md5($request->fullUrl()));
-        Cache::forget('all_products');
+        CacheService::invalidateProductCaches($product->id);
 
         return new ProductResource($product);
     }
@@ -192,7 +194,7 @@ class ProductController extends Controller
         $product->delete();
 
         // Очищаем кэш продуктов после удаления
-        Cache::forget('all_products');
+        CacheService::invalidateProductCaches($product->id);
 
         return response()->json(['message' => 'Товар удалён']);
     }

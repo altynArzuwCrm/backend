@@ -7,6 +7,7 @@ use App\Http\Resources\ProductAssignmentResource;
 use App\Models\Product;
 use App\Models\ProductAssignment;
 use App\Models\User;
+use App\Services\CacheService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Cache;
@@ -75,7 +76,7 @@ class ProductAssignmentController extends Controller
         ]);
 
         // Очищаем кэш продуктов после создания назначения
-        Cache::forget('all_products');
+        CacheService::invalidateProductCaches();
 
         return response()->json([
             'message' => 'Назначение создано',
@@ -100,7 +101,7 @@ class ProductAssignmentController extends Controller
         $assignment->update($data);
 
         // Очищаем кэш продуктов после обновления назначения
-        Cache::forget('all_products');
+        CacheService::invalidateProductCaches();
 
         return response()->json([
             'message' => 'Назначение обновлено',
@@ -121,7 +122,7 @@ class ProductAssignmentController extends Controller
         $assignment->delete();
 
         // Очищаем кэш продуктов после удаления назначения
-        Cache::forget('all_products');
+        CacheService::invalidateProductCaches();
 
         return response()->json([
             'message' => 'Назначение удалено'
@@ -194,7 +195,7 @@ class ProductAssignmentController extends Controller
         }
 
         // Очищаем кэш продуктов после изменения назначений
-        Cache::forget('all_products');
+        CacheService::invalidateProductCaches();
 
         $response = [
             'message' => 'Массовое назначение завершено',

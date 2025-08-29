@@ -7,6 +7,7 @@ use App\Http\Resources\UserResource;
 use App\Models\User;
 use App\Repositories\UserRepository;
 use App\DTOs\UserDTO;
+use App\Services\CacheService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Gate;
@@ -42,9 +43,9 @@ class UserController extends Controller
 
         // Кэшируем результаты поиска на 5 минут для быстрых ответов
         $cacheKey = 'users_' . md5($request->fullUrl());
-        $result = Cache::remember($cacheKey, 300, function () use ($request) {
+        $result = CacheService::rememberWithTags($cacheKey, 300, function () use ($request) {
             return $this->userRepository->getPaginatedUsers($request);
-        });
+        }, [CacheService::TAG_USERS]);
 
         return response()->json($result);
     }

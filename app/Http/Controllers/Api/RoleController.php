@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Role;
+use App\Services\CacheService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Cache;
@@ -18,9 +19,9 @@ class RoleController extends Controller
         }
 
         // Кэшируем роли на 30 минут для быстрых ответов
-        $roles = Cache::remember('roles_with_users_and_stages', 1800, function () {
+        $roles = CacheService::rememberWithTags(CacheService::PATTERN_ROLES_WITH_USERS, 1800, function () {
             return Role::withCount('users')->with('stages')->orderBy('display_name')->get();
-        });
+        }, [CacheService::TAG_ROLES]);
 
         return response()->json($roles);
     }

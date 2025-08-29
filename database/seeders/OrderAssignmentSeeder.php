@@ -131,7 +131,7 @@ class OrderAssignmentSeeder extends Seeder
         $createAssignment(90, 'Ширали', 'Дженнет', 'in_progress', '2025-08-01', '2025-08-01');
 
         // Добавляем назначения для пользователей с разными ролями для тестирования
-        $createAssignment(91, 'Куват', 'Нязли', 'in_progress', '2025-08-02', '2025-08-02');
+        $createAssignment(94, 'Куват', 'Нязли', 'in_progress', '2025-08-02', '2025-08-02');
         $createAssignment(88, 'Ата ага', 'Неля', 'in_progress', '2025-08-02', '2025-08-02');
         $createAssignment(89, 'Николай', 'Елена', 'in_progress', '2025-08-02', '2025-08-02');
         $createAssignment(29, 'Джейхун', 'Дженнет', 'in_progress', '2025-08-02', '2025-08-02');

@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Stage;
 use App\Models\Role;
+use App\Services\CacheService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Log;
@@ -19,11 +20,11 @@ class StageController extends Controller
         // так как стадии нужны для работы с заказами
 
         // Кэшируем стадии на 1 час для быстрых ответов
-        $stages = Cache::remember('stages_with_roles', 3600, function () {
+        $stages = CacheService::rememberWithTags(CacheService::PATTERN_STAGES_WITH_ROLES, 3600, function () {
             return Stage::with('roles')
                 ->ordered()
                 ->get();
-        });
+        }, [CacheService::TAG_STAGES]);
 
         return response()->json($stages);
     }
