@@ -18,6 +18,7 @@ class CacheService
     const TAG_STAGES = 'stages';
     const TAG_ROLES = 'roles';
     const TAG_STATS = 'stats';
+    const TAG_CATEGORIES = 'categories';
 
     /**
      * Cache key patterns
@@ -113,6 +114,18 @@ class CacheService
         }
 
         self::invalidateByTags([self::TAG_PRODUCTS, self::TAG_STATS]);
+    }
+
+    /**
+     * Invalidate category-related caches
+     */
+    public static function invalidateCategoryCaches(?int $categoryId = null): void
+    {
+        if ($categoryId) {
+            // Invalidate specific category caches if needed
+        }
+
+        self::invalidateByTags([self::TAG_CATEGORIES, self::TAG_PRODUCTS, self::TAG_STATS]);
     }
 
     /**

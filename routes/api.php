@@ -14,6 +14,7 @@ use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Api\AuditLogController;
 use App\Http\Controllers\Api\ProductAssignmentController;
 use App\Http\Controllers\Api\RoleController;
+use App\Http\Controllers\Api\CategoryController;
 use Illuminate\Support\Facades\Route;
 
 Route::post('register', [AuthController::class, 'register']);
@@ -38,6 +39,11 @@ Route::middleware(['auth:sanctum', 'handle.null.relations'])->group(function () 
     Route::apiResource('orders', OrderController::class);
     Route::get('products/all', [ProductController::class, 'allProducts']);
     Route::apiResource('products', ProductController::class);
+
+    // Категории
+    Route::get('categories/all', [CategoryController::class, 'all']);
+    Route::apiResource('categories', CategoryController::class);
+    Route::get('categories/{category}/products', [CategoryController::class, 'products']);
 
     Route::prefix('products/{product}')->group(function () {
         Route::post('assignments/bulk', [ProductAssignmentController::class, 'bulkAssign']);

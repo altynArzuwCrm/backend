@@ -54,14 +54,9 @@ class RolePolicy
      */
     public function update(User $user, Role $role): bool
     {
-        // Admin can update all roles
+        // Only admin can update roles
         if ($user->hasRole('admin')) {
             return true;
-        }
-
-        // Manager can update roles except admin role
-        if ($user->hasRole('manager')) {
-            return $role->name !== 'admin';
         }
 
         return false;
@@ -72,14 +67,9 @@ class RolePolicy
      */
     public function delete(User $user, Role $role): bool
     {
-        // Admin can delete all roles except their own
+        // Only admin can delete roles
         if ($user->hasRole('admin')) {
             return $role->name !== 'admin';
-        }
-
-        // Manager can delete roles except admin and manager roles
-        if ($user->hasRole('manager')) {
-            return !in_array($role->name, ['admin', 'manager']);
         }
 
         return false;

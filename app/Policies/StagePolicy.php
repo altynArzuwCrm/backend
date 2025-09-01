@@ -29,7 +29,7 @@ class StagePolicy
      */
     public function create(User $user): bool
     {
-        return $user->hasRole('admin');
+        return $user->isAdminOrManager();
     }
 
     /**

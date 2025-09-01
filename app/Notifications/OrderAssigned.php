@@ -41,6 +41,8 @@ class OrderAssigned extends Notification
             $roleDisplayName = $role ? $role->display_name : $this->roleType;
         }
 
+
+
         return [
             'order_id' => $this->order->id,
             'project_id' => $this->order->project_id,

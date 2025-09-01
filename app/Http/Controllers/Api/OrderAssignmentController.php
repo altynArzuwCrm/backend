@@ -13,6 +13,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\DB;
 use App\Notifications\OrderAssigned;
 
 class OrderAssignmentController extends Controller
@@ -60,64 +61,79 @@ class OrderAssignmentController extends Controller
 
         $data = $request->validate([
             'user_id' => 'required|exists:users,id',
-            'role_type' => 'sometimes|string',
+            'role_type' => 'required|string|exists:roles,name',
             'assigned_stages' => 'sometimes|array',
             'assigned_stages.*' => 'string|exists:stages,name',
         ]);
 
-        $user = User::findOrFail($data['user_id']);
-        if (!$user->is_active) {
-            return response()->json([
-                'message' => 'Нельзя назначить неактивного пользователя',
-            ], 422);
-        }
-        // Получаем все доступные роли из базы данных
-        $availableRoles = \App\Models\Role::pluck('name')->toArray();
+        return \DB::transaction(function () use ($data, $order) {
+            $user = User::findOrFail($data['user_id']);
 
-        // Если ролей нет, используем базовые роли
-        if (empty($availableRoles)) {
-            $availableRoles = ['designer', 'print_operator', 'workshop_worker', 'engraving_operator'];
-        }
-
-        if (!$user->roles()->whereIn('name', $availableRoles)->exists()) {
-            return response()->json([
-                'message' => 'User must have one of the following roles: ' . implode(', ', $availableRoles),
-            ], 422);
-        }
-        $product = $order->product;
-        $roleType = $data['role_type'] ?? $user->roles()->whereIn('name', $availableRoles)->first()?->name;
-
-
-        $assignment = OrderAssignment::create([
-            'order_id' => $order->id,
-            'user_id' => $user->id,
-            'assigned_by' => Auth::user()->id,
-            'role_type' => $roleType,
-        ]);
-
-
-
-        if ($product) {
-            $productStages = $product->getAvailableStages();
-            foreach ($productStages as $stage) {
-                $assignment->assignToStage($stage->name);
+            // Проверяем активность пользователя
+            if (!$user->is_active) {
+                return response()->json([
+                    'message' => 'Нельзя назначить неактивного пользователя',
+                ], 422);
             }
-        }
 
-        try {
-            $user->notify(new OrderAssigned($order, Auth::user()));
-        } catch (\Exception $e) {
-            Log::error('Failed to send OrderAssigned notification', [
-                'user_id' => $user->id,
+            // Проверяем, есть ли у пользователя нужная роль
+            if (!$user->roles()->where('name', $data['role_type'])->exists()) {
+                return response()->json([
+                    'message' => 'Пользователь не имеет роль: ' . $data['role_type'],
+                ], 422);
+            }
+
+            // Проверяем, нет ли уже такого назначения
+            $existingAssignment = OrderAssignment::where([
                 'order_id' => $order->id,
-                'error' => $e->getMessage()
-            ]);
-        }
+                'user_id' => $user->id,
+                'role_type' => $data['role_type'],
+            ])->first();
 
-        return response()->json([
-            'message' => 'User assigned successfully',
-            'assignment' => $assignment,
-        ]);
+            if ($existingAssignment) {
+                return response()->json([
+                    'message' => 'Пользователь уже назначен на этот заказ с этой ролью',
+                ], 422);
+            }
+
+            // Создаем назначение
+            $assignment = OrderAssignment::create([
+                'order_id' => $order->id,
+                'user_id' => $user->id,
+                'assigned_by' => Auth::user()->id,
+                'role_type' => $data['role_type'],
+                'status' => 'pending',
+            ]);
+
+            // Очищаем кэш заказа после создания назначения
+            $orderCacheKey = 'order_' . $order->id;
+            \Illuminate\Support\Facades\Cache::forget($orderCacheKey);
+
+            // Автоназначение на стадии по продукту
+            $product = $order->product;
+            if ($product) {
+                $productStages = $product->getAvailableStages();
+                foreach ($productStages as $stage) {
+                    $assignment->assignToStage($stage->name);
+                }
+            }
+
+            // Отправляем уведомление
+            try {
+                $user->notify(new OrderAssigned($order, Auth::user(), $data['role_type']));
+            } catch (\Exception $e) {
+                Log::error('Failed to send OrderAssigned notification', [
+                    'user_id' => $user->id,
+                    'order_id' => $order->id,
+                    'error' => $e->getMessage()
+                ]);
+            }
+
+            return response()->json([
+                'message' => 'User assigned successfully',
+                'assignment' => $assignment->load(['user.roles', 'orderStageAssignments.stage']),
+            ]);
+        });
     }
 
     public function bulkAssign(Request $request, Order $order)
@@ -129,21 +145,13 @@ class OrderAssignmentController extends Controller
         $data = $request->validate([
             'assignments' => 'required|array|min:1',
             'assignments.*.user_id' => 'required|exists:users,id',
-            'assignments.*.role_type' => 'sometimes|string',
+            'assignments.*.role_type' => 'required|string|exists:roles,name',
             'assignments.*.assigned_stages' => 'sometimes|array',
-            'assignments.*.assigned_stages.*' => 'integer|exists:stages,id',
+            'assignments.*.assigned_stages.*' => 'string|exists:stages,name',
         ]);
 
         $createdAssignments = [];
         $errors = [];
-
-        // Получаем все доступные роли из базы данных
-        $availableRoles = \App\Models\Role::pluck('name')->toArray();
-
-        // Если ролей нет, используем базовые роли
-        if (empty($availableRoles)) {
-            $availableRoles = ['designer', 'print_operator', 'workshop_worker', 'engraving_operator'];
-        }
 
         foreach ($data['assignments'] as $index => $assignmentData) {
             try {
@@ -156,19 +164,17 @@ class OrderAssignmentController extends Controller
                 }
 
                 // Проверка ролей пользователя
-                if (!$user->roles()->whereIn('name', $availableRoles)->exists()) {
-                    $errors[] = "Строка {$index}: Пользователь не имеет нужной роли";
+                if (!$user->roles()->where('name', $assignmentData['role_type'])->exists()) {
+                    $errors[] = "Строка {$index}: Пользователь не имеет роль: " . $assignmentData['role_type'];
                     continue;
                 }
 
-                // Определение роли
-                $roleType = $assignmentData['role_type'] ?? $user->roles()->whereIn('name', $availableRoles)->first()?->name;
-
                 // Проверка существующего назначения
-                $existingAssignment = OrderAssignment::where('order_id', $order->id)
-                    ->where('user_id', $user->id)
-                    ->where('role_type', $roleType)
-                    ->first();
+                $existingAssignment = OrderAssignment::where([
+                    'order_id' => $order->id,
+                    'user_id' => $user->id,
+                    'role_type' => $assignmentData['role_type'],
+                ])->first();
 
                 if ($existingAssignment) {
                     $errors[] = "Строка {$index}: Пользователь уже назначен на этот заказ с этой ролью";
@@ -180,7 +186,8 @@ class OrderAssignmentController extends Controller
                     'order_id' => $order->id,
                     'user_id' => $user->id,
                     'assigned_by' => Auth::user()->id,
-                    'role_type' => $roleType,
+                    'role_type' => $assignmentData['role_type'],
+                    'status' => 'pending',
                 ]);
 
                 // Назначение на стадии
@@ -192,7 +199,7 @@ class OrderAssignmentController extends Controller
                     // Автоназначение на стадии по роли и текущей стадии заказа
                     $currentStage = Stage::where('name', $order->current_stage)->first();
                     if ($currentStage) {
-                        $roleStages = $currentStage->roles()->where('name', $roleType)->where('stage_roles.auto_assign', true)->get();
+                        $roleStages = $currentStage->roles()->where('name', $assignmentData['role_type'])->where('stage_roles.auto_assign', true)->get();
                         foreach ($roleStages as $stage) {
                             $created->assignToStage($stage->id);
                         }
@@ -200,20 +207,8 @@ class OrderAssignmentController extends Controller
                 }
 
                 // Отправка уведомления
-                Log::info('Sending OrderAssigned notification (bulk)', [
-                    'user_id' => $user->id,
-                    'user_name' => $user->name,
-                    'order_id' => $order->id,
-                    'assignment_id' => $created->id,
-                    'assigned_by' => Auth::user()->id
-                ]);
-
                 try {
-                    $user->notify(new OrderAssigned($order, Auth::user()));
-                    Log::info('OrderAssigned notification sent successfully (bulk)', [
-                        'user_id' => $user->id,
-                        'order_id' => $order->id
-                    ]);
+                    $user->notify(new OrderAssigned($order, Auth::user(), $assignmentData['role_type']));
                 } catch (\Exception $e) {
                     Log::error('Failed to send OrderAssigned notification (bulk)', [
                         'user_id' => $user->id,
@@ -252,14 +247,13 @@ class OrderAssignmentController extends Controller
             'assignments' => 'required|array|min:1',
             'assignments.*.order_id' => 'required|exists:orders,id',
             'assignments.*.user_id' => 'required|exists:users,id',
-            'assignments.*.role_type' => 'required|string',
+            'assignments.*.role_type' => 'required|string|exists:roles,name',
             'assignments.*.assigned_stages' => 'sometimes|array',
-            'assignments.*.assigned_stages.*' => 'integer|exists:stages,id',
+            'assignments.*.assigned_stages.*' => 'string|exists:stages,name',
         ]);
 
         $createdAssignments = [];
         $errors = [];
-        $allowedRoles = ['designer', 'print_operator', 'workshop_worker', 'engraving_operator'];
 
         foreach ($data['assignments'] as $index => $assignmentData) {
             try {
@@ -272,8 +266,8 @@ class OrderAssignmentController extends Controller
                     continue;
                 }
 
-                if (!$user->roles()->whereIn('name', $allowedRoles)->exists()) {
-                    $errors[] = "Строка {$index}: Пользователь не имеет нужной роли";
+                if (!$user->roles()->where('name', $assignmentData['role_type'])->exists()) {
+                    $errors[] = "Строка {$index}: Пользователь не имеет роль: " . $assignmentData['role_type'];
                     continue;
                 }
 
@@ -475,6 +469,10 @@ class OrderAssignmentController extends Controller
 
         $assignment->save();
 
+        // Очищаем кэш заказа после обновления назначения
+        $orderCacheKey = 'order_' . $assignment->order_id;
+        \Illuminate\Support\Facades\Cache::forget($orderCacheKey);
+
         if ($oldStatus !== $assignment->status) {
             Log::info('Статус назначения изменился', [
                 'assignment_id' => $assignment->id,
@@ -494,7 +492,7 @@ class OrderAssignmentController extends Controller
                     'role' => $admin->role
                 ]);
                 try {
-                    $admin->notify(new \App\Notifications\AssignmentStatusChanged($assignment, auth()->user()));
+                    $admin->notify(new \App\Notifications\AssignmentStatusChanged($assignment, Auth::user()));
                     Log::info('Уведомление отправлено успешно', [
                         'admin_id' => $admin->id,
                         'assignment_id' => $assignment->id
@@ -577,10 +575,14 @@ class OrderAssignmentController extends Controller
                     'assignment_id' => $assignment->id,
                     'order_id' => $assignment->order_id
                 ]);
-                $assignedUser->notify(new \App\Notifications\AssignmentRemoved($assignment, auth()->user()));
+                $assignedUser->notify(new \App\Notifications\AssignmentRemoved($assignment, Auth::user()));
             }
 
             $assignment->delete();
+
+            // Очищаем кэш заказа после удаления назначения
+            $orderCacheKey = 'order_' . $assignment->order_id;
+            \Illuminate\Support\Facades\Cache::forget($orderCacheKey);
         } else {
             return response()->json([
                 'message' => 'You can\'t delete this assignment',
@@ -599,7 +601,7 @@ class OrderAssignmentController extends Controller
         $data = $request->validate([
             'user_id' => 'required|exists:users,id',
             'stage_id' => 'required|exists:stages,id',
-            'role_type' => 'required|string',
+            'role_type' => 'required|string|exists:roles,name',
         ]);
 
         $user = User::findOrFail($data['user_id']);
@@ -649,7 +651,7 @@ class OrderAssignmentController extends Controller
         $data = $request->validate([
             'user_id' => 'required|exists:users,id',
             'stage_id' => 'required|exists:stages,id',
-            'role_type' => 'required|string',
+            'role_type' => 'required|string|exists:roles,name',
         ]);
 
         $user = User::findOrFail($data['user_id']);

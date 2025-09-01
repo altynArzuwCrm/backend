@@ -19,7 +19,7 @@ class ProjectPolicy
         if ($user->hasElevatedPermissions()) {
             return true;
         }
-        
+
         // Сотрудники видят только свои проекты (проверяется в view)
         return $user->isStaff();
     }
@@ -87,7 +87,7 @@ class ProjectPolicy
      */
     public function delete(User $user, Project $project): bool
     {
-        return $user->isAdminOrManager();
+        return $user->hasRole('admin');
     }
 
     /**

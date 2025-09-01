@@ -19,7 +19,7 @@ class ProductPolicy
         if ($user->hasElevatedPermissions()) {
             return true;
         }
-        
+
         // Сотрудники видят только свои товары (проверяется в view)
         return $user->isStaff();
     }
@@ -77,7 +77,7 @@ class ProductPolicy
      */
     public function delete(User $user, Product $product): bool
     {
-        return $user->isAdminOrManager();
+        return $user->hasRole('admin');
     }
 
     /**

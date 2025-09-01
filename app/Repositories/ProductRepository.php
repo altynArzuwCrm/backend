@@ -12,7 +12,7 @@ class ProductRepository
 {
     public function getPaginatedProducts(Request $request): LengthAwarePaginator
     {
-        $query = Product::with(['assignments.user', 'orders.assignments', 'availableStages.roles', 'productStages.stage.roles']);
+        $query = Product::with(['assignments.user', 'orders.assignments', 'availableStages.roles', 'productStages.stage.roles', 'categories']);
 
         // Поиск
         if ($request->has('search') && $request->search) {
@@ -71,7 +71,7 @@ class ProductRepository
         // Кэшируем отдельные продукты на 15 минут
         $cacheKey = 'product_' . $id;
         return Cache::remember($cacheKey, 900, function () use ($id) {
-            $product = Product::with(['assignments.user', 'orders.assignments', 'availableStages.roles', 'productStages.stage.roles'])->find($id);
+            $product = Product::with(['assignments.user', 'orders.assignments', 'availableStages.roles', 'productStages.stage.roles', 'categories'])->find($id);
 
             if (!$product) {
                 return null;

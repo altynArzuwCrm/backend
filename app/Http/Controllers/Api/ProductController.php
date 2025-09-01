@@ -64,12 +64,16 @@ class ProductController extends Controller
             ], 403);
         }
 
+
+
         $data = $request->validate([
             'name' => 'required|string|max:255',
             'stages' => 'sometimes|array',
             'stages.*.stage_id' => 'required|exists:stages,id',
             'stages.*.is_available' => 'boolean',
             'stages.*.is_default' => 'boolean',
+            'categories' => 'sometimes|array',
+            'categories.*' => 'exists:categories,id',
         ]);
 
         $product = Product::create($data);
@@ -99,8 +103,13 @@ class ProductController extends Controller
             }
         }
 
+        // Assign categories if provided
+        if (isset($data['categories'])) {
+            $product->categories()->sync($data['categories']);
+        }
+
         // Используем with() вместо load() для предотвращения N+1 проблемы
-        $product = Product::with(['assignments.user', 'orders.assignments', 'availableStages.roles', 'productStages.stage.roles'])->find($product->id);
+        $product = Product::with(['assignments.user', 'orders.assignments', 'availableStages.roles', 'productStages.stage.roles', 'categories'])->find($product->id);
 
         // Очищаем кэш продуктов после создания
         CacheService::invalidateProductCaches();
@@ -130,12 +139,16 @@ class ProductController extends Controller
             ], 403);
         }
 
+
+
         $data = $request->validate([
             'name' => 'sometimes|string|max:255',
             'stages' => 'sometimes|array',
             'stages.*.stage_id' => 'required|exists:stages,id',
             'stages.*.is_available' => 'boolean',
             'stages.*.is_default' => 'boolean',
+            'categories' => 'sometimes|array',
+            'categories.*' => 'exists:categories,id',
         ]);
 
         $product->update($data);
@@ -165,8 +178,13 @@ class ProductController extends Controller
             }
         }
 
+        // Update categories if provided
+        if (isset($data['categories'])) {
+            $product->categories()->sync($data['categories']);
+        }
+
         // Используем with() вместо load() для предотвращения N+1 проблемы
-        $product = Product::with(['assignments.user', 'orders.assignments', 'availableStages.roles', 'productStages.stage.roles'])->find($product->id);
+        $product = Product::with(['assignments.user', 'orders.assignments', 'availableStages.roles', 'productStages.stage.roles', 'categories'])->find($product->id);
 
         // Очищаем кэш продуктов после обновления
         CacheService::invalidateProductCaches($product->id);

@@ -21,7 +21,7 @@ class OrderItemAssignmentPolicy
 
     public function delete(User $user)
     {
-        return $user->hasAnyRole(['admin', 'manager']);
+        return $user->hasRole('admin');
     }
 
     public function viewAny(User $user)

@@ -23,6 +23,13 @@ class OrderAssignment extends Model
         'role_type'
     ];
 
+    protected $casts = [
+        'cancelled_at' => 'datetime',
+        'approved_at' => 'datetime',
+        'started_at' => 'datetime',
+        'assigned_at' => 'datetime',
+    ];
+
     public function order()
     {
         return $this->belongsTo(Order::class);

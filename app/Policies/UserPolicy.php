@@ -78,19 +78,9 @@ class UserPolicy
      */
     public function delete(User $user, User $model): bool
     {
-        // Admin can delete all users except themselves
+        // Only admin can delete users
         if ($user->hasRole('admin')) {
             return $user->id !== $model->id;
-        }
-
-        // Manager can delete regular users and power users
-        if ($user->hasRole('manager')) {
-            return !$model->hasAnyRole(['admin', 'manager']);
-        }
-
-        // Power user can delete regular users
-        if ($user->hasRole('power_user')) {
-            return !$model->hasAnyRole(['admin', 'manager', 'power_user']);
         }
 
         return false;

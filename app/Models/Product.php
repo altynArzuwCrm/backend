@@ -79,4 +79,20 @@ class Product extends Model
     {
         return ProductAssignment::getNextAvailableUser($this->id, $roleType, $excludeUserIds);
     }
+
+    /**
+     * Связь many-to-many с категориями
+     */
+    public function categories()
+    {
+        return $this->belongsToMany(Category::class, 'product_categories');
+    }
+
+    /**
+     * Получить названия категорий продукта
+     */
+    public function getCategoryNamesAttribute()
+    {
+        return $this->categories->pluck('name')->toArray();
+    }
 }

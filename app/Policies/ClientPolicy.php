@@ -51,7 +51,7 @@ class ClientPolicy
      */
     public function delete(User $user, Client $client): bool
     {
-        return $user->isAdminOrManager();
+        return $user->hasRole('admin');
     }
 
     /**

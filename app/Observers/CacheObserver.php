@@ -182,6 +182,15 @@ class CacheObserver
         // Order assignments affect order lists and user caches
         CacheService::invalidateOrderCaches();
         CacheService::invalidateUserCaches($assignment->user_id);
+
+        // Invalidate specific order details cache
+        if ($assignment->order_id) {
+            CacheService::invalidateOrderCaches($assignment->order_id);
+
+            // Также очищаем кэш в Laravel Cache
+            $orderCacheKey = 'order_' . $assignment->order_id;
+            \Illuminate\Support\Facades\Cache::forget($orderCacheKey);
+        }
     }
 
     /**

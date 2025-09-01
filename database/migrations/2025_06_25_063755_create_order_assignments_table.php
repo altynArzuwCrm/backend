@@ -23,6 +23,7 @@ return new class extends Migration
             $table->timestamp('approved_at')->nullable();
             $table->foreignId('assigned_by')->nullable()->constrained('users')->nullOnDelete();
             $table->string('role_type')->nullable();
+            $table->unique(['order_id', 'user_id', 'role_type'], 'unique_order_user_role');
             $table->timestamps();
             $table->softDeletes();
         });
