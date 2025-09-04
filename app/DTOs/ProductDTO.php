@@ -17,7 +17,8 @@ class ProductDTO
         public ?string $created_at,
         public ?string $updated_at,
         public array $assignments = [],
-        public array $available_stages = []
+        public array $available_stages = [],
+        public array $categories = []
     ) {}
 
     public static function fromModel(Product $product): self
@@ -30,7 +31,8 @@ class ProductDTO
             created_at: $product->created_at ? (is_string($product->created_at) ? $product->created_at : $product->created_at->toISOString()) : null,
             updated_at: $product->updated_at ? (is_string($product->updated_at) ? $product->updated_at : $product->updated_at->toISOString()) : null,
             assignments: $product->assignments ? $product->assignments->map(fn($assignment) => ProductAssignmentDTO::fromModel($assignment))->toArray() : [],
-            available_stages: $product->availableStages ? $product->availableStages->map(fn($stage) => StageDTO::fromModel($stage))->toArray() : []
+            available_stages: $product->availableStages ? $product->availableStages->map(fn($stage) => StageDTO::fromModel($stage))->toArray() : [],
+            categories: $product->categories ? $product->categories->map(fn($category) => ['id' => $category->id, 'name' => $category->name])->toArray() : []
         );
     }
 
@@ -44,7 +46,8 @@ class ProductDTO
             'created_at' => $this->created_at,
             'updated_at' => $this->updated_at,
             'assignments' => array_map(fn($assignment) => $assignment->toArray(), $this->assignments),
-            'available_stages' => array_map(fn($stage) => $stage->toArray(), $this->available_stages)
+            'available_stages' => array_map(fn($stage) => $stage->toArray(), $this->available_stages),
+            'categories' => $this->categories
         ];
     }
 

@@ -13,7 +13,7 @@ class StagePolicy
      */
     public function viewAny(User $user): bool
     {
-        return $user->isAdminOrManager();
+        return $user->isAdminOrManager() || $user->isStaff(); // Администраторы, менеджеры и сотрудники могут просматривать стадии
     }
 
     /**
@@ -21,7 +21,7 @@ class StagePolicy
      */
     public function view(User $user, Stage $stage): bool
     {
-        return $user->isAdminOrManager();
+        return $user->isAdminOrManager() || $user->isStaff(); // Администраторы, менеджеры и сотрудники могут просматривать стадии
     }
 
     /**
@@ -29,7 +29,7 @@ class StagePolicy
      */
     public function create(User $user): bool
     {
-        return $user->isAdminOrManager();
+        return $user->hasRole('admin'); // Только администраторы могут создавать стадии
     }
 
     /**

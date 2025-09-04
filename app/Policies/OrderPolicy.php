@@ -44,10 +44,15 @@ class OrderPolicy
             return true;
         }
 
-        // Сотрудники видят все заказы
+        // Сотрудники видят только заказы, где они назначены
         if ($user->isStaff()) {
-            Log::info('User is staff - access granted');
-            return true;
+            $hasAssignment = $order->assignments()->where('user_id', $user->id)->exists();
+            Log::info('User is staff - checking assignment', [
+                'user_id' => $user->id,
+                'order_id' => $order->id,
+                'has_assignment' => $hasAssignment
+            ]);
+            return $hasAssignment;
         }
 
         Log::warning('User access denied - no permissions');
@@ -72,11 +77,7 @@ class OrderPolicy
             return true;
         }
 
-        // Сотрудники могут обновлять только заказы, где они назначены
-        if ($user->isStaff()) {
-            return $order->assignments()->where('user_id', $user->id)->exists();
-        }
-
+        // Сотрудники НЕ могут редактировать заказы
         return false;
     }
 
@@ -140,11 +141,7 @@ class OrderPolicy
             return true;
         }
 
-        // Employee can change status of their own orders
-        if ($user->hasRole('employee')) {
-            return $order->assigned_to === $user->id;
-        }
-
+        // Сотрудники НЕ могут менять стадии заказов
         return false;
     }
 
@@ -168,9 +165,65 @@ class OrderPolicy
             return true;
         }
 
-        // Employee can view history of their own orders
-        if ($user->hasRole('employee')) {
-            return $order->assigned_to === $user->id;
+        // Сотрудники могут видеть историю только заказов, где они назначены
+        if ($user->isStaff()) {
+            return $order->assignments()->where('user_id', $user->id)->exists();
+        }
+
+        return false;
+    }
+
+    /**
+     * Determine whether the user can view order comments.
+     */
+    public function viewOrderComments(User $user, Order $order): bool
+    {
+        // Admin can view all order comments
+        if ($user->hasRole('admin')) {
+            return true;
+        }
+
+        // Manager can view all order comments
+        if ($user->hasRole('manager')) {
+            return true;
+        }
+
+        // Power user can view all order comments
+        if ($user->hasRole('power_user')) {
+            return true;
+        }
+
+        // Сотрудники могут видеть комментарии только заказов, где они назначены
+        if ($user->isStaff()) {
+            return $order->assignments()->where('user_id', $user->id)->exists();
+        }
+
+        return false;
+    }
+
+    /**
+     * Determine whether the user can update assignment status.
+     */
+    public function updateAssignmentStatus(User $user, Order $order): bool
+    {
+        // Admin can update any assignment status
+        if ($user->hasRole('admin')) {
+            return true;
+        }
+
+        // Manager can update any assignment status
+        if ($user->hasRole('manager')) {
+            return true;
+        }
+
+        // Power user can update any assignment status
+        if ($user->hasRole('power_user')) {
+            return true;
+        }
+
+        // Сотрудники могут изменять статусы только своих назначений
+        if ($user->isStaff()) {
+            return $order->assignments()->where('user_id', $user->id)->exists();
         }
 
         return false;

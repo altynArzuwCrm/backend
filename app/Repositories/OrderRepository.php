@@ -90,7 +90,8 @@ class OrderRepository
                             $productQuery->where('name', 'like', '%' . $search . '%');
                         })
                         ->orWhereHas('client', function ($clientQuery) use ($search) {
-                            $clientQuery->where('name', 'like', '%' . $search . '%');
+                            $clientQuery->where('name', 'like', '%' . $search . '%')
+                                ->orWhere('company_name', 'like', '%' . $search . '%');
                         });
                 });
             }

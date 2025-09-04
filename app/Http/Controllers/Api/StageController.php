@@ -16,8 +16,9 @@ class StageController extends Controller
 {
     public function index()
     {
-        // Разрешаем доступ всем аутентифицированным пользователям
-        // так как стадии нужны для работы с заказами
+        if (Gate::denies('viewAny', Stage::class)) {
+            abort(403, 'Доступ запрещён');
+        }
 
         // Кэшируем стадии на 1 час для быстрых ответов
         $stages = CacheService::rememberWithTags(CacheService::PATTERN_STAGES_WITH_ROLES, 3600, function () {

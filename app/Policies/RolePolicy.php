@@ -15,7 +15,7 @@ class RolePolicy
      */
     public function viewAny(User $user): bool
     {
-        return true; // Доступен всем авторизованным пользователям
+        return $user->isAdminOrManager() || $user->isStaff(); // Администраторы, менеджеры и сотрудники могут просматривать роли
     }
 
     /**
@@ -38,6 +38,11 @@ class RolePolicy
             return !in_array($role->name, ['admin', 'manager']);
         }
 
+        // Сотрудники могут видеть роли для работы с заказами
+        if ($user->isStaff()) {
+            return true;
+        }
+
         return false;
     }
 
@@ -46,7 +51,7 @@ class RolePolicy
      */
     public function create(User $user): bool
     {
-        return $user->isAdminOrManager();
+        return $user->hasRole('admin'); // Только администраторы могут создавать роли
     }
 
     /**
@@ -80,7 +85,7 @@ class RolePolicy
      */
     public function restore(User $user, Role $role): bool
     {
-        return $user->isAdminOrManager();
+        return $user->hasRole('admin'); // Только администраторы могут восстанавливать роли
     }
 
     /**
@@ -96,7 +101,7 @@ class RolePolicy
      */
     public function assignRoles(User $user): bool
     {
-        return $user->hasAnyRole(['admin', 'manager']);
+        return $user->hasRole('admin'); // Только администраторы могут назначать роли
     }
 
     /**

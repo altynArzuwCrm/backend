@@ -54,6 +54,8 @@ class OrderAssigned extends Notification
             'stage' => $this->stage,
             'message' => 'Вам назначен новый заказ #' . $this->order->id . ' в роли "' . $roleDisplayName . '" пользователем ' . ($actionUser ? ($actionUser->display_name ?? $actionUser->username) : 'система'),
             'assigned_at' => now(),
+            'icon' => 'assignment',
+            'url' => '/orders?order=' . $this->order->id,
         ];
     }
 }

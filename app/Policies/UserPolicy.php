@@ -14,7 +14,7 @@ class UserPolicy
      */
     public function viewAny(User $user): bool
     {
-        return $user->hasElevatedPermissions();
+        return $user->hasElevatedPermissions() || $user->isStaff();
     }
 
     /**
@@ -37,6 +37,11 @@ class UserPolicy
             return !$model->hasAnyRole(['admin', 'manager']);
         }
 
+        // Сотрудники могут видеть пользователей для работы с заказами
+        if ($user->isStaff()) {
+            return true;
+        }
+
         // Обычные пользователи видят только себя
         return $user->id === $model->id;
     }
@@ -46,7 +51,7 @@ class UserPolicy
      */
     public function create(User $user): bool
     {
-        return $user->isAdminOrManager();
+        return $user->hasRole('admin');
     }
 
     /**
@@ -54,23 +59,8 @@ class UserPolicy
      */
     public function update(User $user, User $model): bool
     {
-        // Admin can update all users
-        if ($user->hasRole('admin')) {
-            return true;
-        }
-
-        // Manager can update all users except admins
-        if ($user->hasRole('manager')) {
-            return !$model->hasRole('admin');
-        }
-
-        // Power user can update regular users and power users
-        if ($user->hasRole('power_user')) {
-            return !$model->hasAnyRole(['admin', 'manager']);
-        }
-
-        // Regular users can only update themselves
-        return $user->id === $model->id;
+        // Only admin can update users
+        return $user->hasRole('admin');
     }
 
     /**

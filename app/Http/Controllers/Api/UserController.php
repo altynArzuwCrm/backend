@@ -33,6 +33,14 @@ class UserController extends Controller
         }
     }
 
+    private function checkUserCreateEditAccess()
+    {
+        $user = Auth::user();
+        if (!$user || !$user->hasRole('admin')) {
+            abort(403, 'Доступ запрещён. Только администраторы могут создавать и редактировать пользователей.');
+        }
+    }
+
     public function index(Request $request)
     {
         $user = Auth::user();
@@ -78,7 +86,10 @@ class UserController extends Controller
 
     public function show(User $user)
     {
-        $this->checkUserManagementAccess();
+        $user = Auth::user();
+        if (!$user || !$user->isAdminOrManager()) {
+            abort(403, 'Доступ запрещён. Только администраторы и менеджеры могут просматривать детали пользователей.');
+        }
 
         $userDTO = $this->userRepository->getUserById($user->id);
 
@@ -91,7 +102,10 @@ class UserController extends Controller
 
     public function store(Request $request)
     {
-        $this->checkUserManagementAccess();
+        $user = Auth::user();
+        if (!$user || !$user->hasRole('admin')) {
+            abort(403, 'Доступ запрещён. Только администраторы могут создавать пользователей.');
+        }
 
         $data = $request->validate([
             'name' => 'required|string',
@@ -125,7 +139,10 @@ class UserController extends Controller
 
     public function update(Request $request, User $user)
     {
-        $this->checkUserManagementAccess();
+        $user = Auth::user();
+        if (!$user || !$user->hasRole('admin')) {
+            abort(403, 'Доступ запрещён. Только администраторы могут редактировать пользователей.');
+        }
 
         $data = $request->validate([
             'name' => 'sometimes|string',
@@ -172,12 +189,20 @@ class UserController extends Controller
         return response()->json($user);
     }
 
-    public function destroy(User $user)
+    public function destroy(User $userToDelete)
     {
-        $this->checkUserManagementAccess();
+        $currentUser = Auth::user();
+        if (!$currentUser || !$currentUser->hasRole('admin')) {
+            abort(403, 'Доступ запрещён. Только администраторы могут удалять пользователей.');
+        }
+
+        // Администратор не может удалить самого себя
+        if ($currentUser->id === $userToDelete->id) {
+            abort(403, 'Вы не можете удалить самого себя.');
+        }
 
         // Проверяем все назначения пользователя (не только активные)
-        $assignmentsCount = $user->assignments()->count();
+        $assignmentsCount = $userToDelete->assignments()->count();
 
         if ($assignmentsCount > 0) {
             return response()->json([
@@ -185,31 +210,42 @@ class UserController extends Controller
             ], 422);
         }
 
-        if ($user->image && Storage::disk('public')->exists($user->image)) {
-            Storage::disk('public')->delete($user->image);
+        if ($userToDelete->image && Storage::disk('public')->exists($userToDelete->image)) {
+            Storage::disk('public')->delete($userToDelete->image);
         }
 
-        $user->delete();
+        $userToDelete->delete();
 
         return response()->json(['message' => 'Пользователь удалён']);
     }
 
-    public function toggleActive(User $user)
+    public function toggleActive(User $userToToggle)
     {
-        $this->checkUserManagementAccess();
+        $currentUser = Auth::user();
+        if (!$currentUser || !$currentUser->hasRole('admin')) {
+            abort(403, 'Доступ запрещён. Только администраторы могут изменять активность пользователей.');
+        }
 
-        $user->is_active = !$user->is_active;
-        $user->save();
+        // Администратор не может деактивировать самого себя
+        if ($currentUser->id === $userToToggle->id) {
+            abort(403, 'Вы не можете деактивировать самого себя.');
+        }
+
+        $userToToggle->is_active = !$userToToggle->is_active;
+        $userToToggle->save();
 
         return response()->json([
-            'message' => $user->is_active ? 'Пользователь активирован' : 'Пользователь деактивирован',
-            'is_active' => $user->is_active
+            'message' => $userToToggle->is_active ? 'Пользователь активирован' : 'Пользователь деактивирован',
+            'is_active' => $userToToggle->is_active
         ]);
     }
 
     public function getAllUsers(Request $request)
     {
-        $this->checkUserManagementAccess();
+        $user = Auth::user();
+        if (!$user || !$user->isAdminOrManager()) {
+            abort(403, 'Доступ запрещён. Только администраторы и менеджеры могут получать всех пользователей.');
+        }
         $users = User::all();
         return UserResource::collection($users);
     }

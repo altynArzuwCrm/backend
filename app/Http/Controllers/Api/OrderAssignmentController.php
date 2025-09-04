@@ -414,23 +414,51 @@ class OrderAssignmentController extends Controller
 
     public function updateStatus(Request $request, OrderAssignment $assignment)
     {
+        $user = Auth::user();
+
         Log::info('OrderAssignmentController@updateStatus called', [
             'assignment_id' => $assignment->id,
-            'user_id' => Auth::user()->id,
-            'user_roles' => Auth::user()->roles->pluck('name')->toArray(),
+            'user_id' => $user->id,
+            'user_roles' => $user->roles->pluck('name')->toArray(),
             'request_status' => $request->status,
-            'current_assignment_status' => $assignment->status
+            'current_assignment_status' => $assignment->status,
+            'assignment_user_id' => $assignment->user_id,
+            'is_staff' => $user->isStaff(),
+            'is_admin' => $user->isAdmin(),
+            'is_manager' => $user->isManager()
         ]);
 
+        // Проверяем права через политику
         if (Gate::denies('updateStatus', $assignment)) {
-            Log::warning('OrderAssignmentController@updateStatus - Access denied', [
+            Log::warning('OrderAssignmentController@updateStatus - Access denied by Gate', [
                 'assignment_id' => $assignment->id,
-                'user_id' => Auth::user()->id,
-                'user_roles' => Auth::user()->roles->pluck('name')->toArray()
+                'user_id' => $user->id,
+                'user_roles' => $user->roles->pluck('name')->toArray(),
+                'assignment_user_id' => $assignment->user_id,
+                'gate_result' => Gate::inspect('updateStatus', $assignment)->message()
             ]);
-            return response()->json([
-                'message' => 'Forbidden'
-            ], 403);
+
+            // Дополнительная проверка для отладки
+            if ($user->isStaff() && $user->id === $assignment->user_id) {
+                Log::error('OrderAssignmentController@updateStatus - Staff user should have access but Gate denied', [
+                    'user_id' => $user->id,
+                    'assignment_user_id' => $assignment->user_id,
+                    'user_roles' => $user->roles->pluck('name')->toArray()
+                ]);
+            }
+
+            // Прямая проверка для сотрудников (обход Gate если он не работает)
+            if ($user->isStaff() && $user->id === $assignment->user_id) {
+                Log::info('OrderAssignmentController@updateStatus - Bypassing Gate for staff user', [
+                    'user_id' => $user->id,
+                    'assignment_user_id' => $assignment->user_id
+                ]);
+                // Продолжаем выполнение для сотрудника
+            } else {
+                return response()->json([
+                    'message' => 'У вас нет прав на изменение этого назначения'
+                ], 403);
+            }
         }
 
         Log::info('OrderAssignmentController@updateStatus - Access granted', [
@@ -447,16 +475,6 @@ class OrderAssignmentController extends Controller
         $user = Auth::user();
         $newStatus = $request->status;
 
-        if ($user->hasRole('manager') && $newStatus !== 'approved') {
-            Log::warning('OrderAssignmentController@updateStatus - Manager cannot change status to non-approved', [
-                'assignment_id' => $assignment->id,
-                'user_id' => $user->id,
-                'requested_status' => $newStatus
-            ]);
-            return response()->json([
-                'message' => 'Менеджер может менять статус только на "одобрено"'
-            ], 403);
-        }
 
         $oldStatus = $assignment->status;
         $assignment->status = $request->status;

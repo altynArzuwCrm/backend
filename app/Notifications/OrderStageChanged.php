@@ -66,6 +66,7 @@ class OrderStageChanged extends Notification
             'message' => $message,
             'changed_at' => now(),
             'icon' => $this->roleType ? 'assignment' : 'stage_transition',
+            'url' => '/orders?order=' . $this->order->id,
         ];
     }
 }

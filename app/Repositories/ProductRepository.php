@@ -23,8 +23,15 @@ class ProductRepository
             });
         }
 
-        $sortBy = $request->get('sort_by', 'id');
-        $sortOrder = $request->get('sort_order', 'desc');
+        // Фильтрация по категории
+        if ($request->has('category_id') && $request->category_id) {
+            $query->whereHas('categories', function ($q) use ($request) {
+                $q->where('categories.id', $request->category_id);
+            });
+        }
+
+        $sortBy = $request->get('sort_by', 'name');
+        $sortOrder = $request->get('sort_order', 'asc');
 
         // Специальная сортировка по имени
         if ($sortBy === 'name') {
