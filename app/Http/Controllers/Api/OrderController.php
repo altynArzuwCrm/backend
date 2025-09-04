@@ -33,7 +33,7 @@ class OrderController extends Controller
         $user = request()->user();
 
         $cacheKey = 'orders_' . $user->id . '_' . md5($request->fullUrl());
-        $result = CacheService::rememberWithTags($cacheKey, 180, function () use ($request, $user) {
+        $result = CacheService::rememberWithTags($cacheKey, 900, function () use ($request, $user) {
             return $this->orderRepository->getPaginatedOrders($request, $user);
         }, [CacheService::TAG_ORDERS]);
 

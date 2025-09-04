@@ -75,9 +75,9 @@ class ProductRepository
 
     public function getProductById(int $id): ?ProductDTO
     {
-        // Кэшируем отдельные продукты на 15 минут
+        // Кэшируем отдельные продукты на 1 час
         $cacheKey = 'product_' . $id;
-        return Cache::remember($cacheKey, 900, function () use ($id) {
+        return Cache::remember($cacheKey, 3600, function () use ($id) {
             $product = Product::with(['assignments.user', 'orders.assignments', 'availableStages.roles', 'productStages.stage.roles', 'categories'])->find($id);
 
             if (!$product) {

@@ -18,8 +18,8 @@ class RoleController extends Controller
             abort(403, 'Доступ запрещён');
         }
 
-        // Кэшируем роли на 30 минут для быстрых ответов
-        $roles = CacheService::rememberWithTags(CacheService::PATTERN_ROLES_WITH_USERS, 1800, function () {
+        // Кэшируем роли на 2 часа для быстрых ответов
+        $roles = CacheService::rememberWithTags(CacheService::PATTERN_ROLES_WITH_USERS, 7200, function () {
             return Role::withCount('users')->with('stages')->orderBy('display_name')->get();
         }, [CacheService::TAG_ROLES]);
 

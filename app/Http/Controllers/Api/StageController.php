@@ -20,8 +20,8 @@ class StageController extends Controller
             abort(403, 'Доступ запрещён');
         }
 
-        // Кэшируем стадии на 1 час для быстрых ответов
-        $stages = CacheService::rememberWithTags(CacheService::PATTERN_STAGES_WITH_ROLES, 3600, function () {
+        // Кэшируем стадии на 4 часа для быстрых ответов
+        $stages = CacheService::rememberWithTags(CacheService::PATTERN_STAGES_WITH_ROLES, 14400, function () {
             return Stage::with('roles')
                 ->ordered()
                 ->get();

@@ -43,10 +43,10 @@ class User extends Authenticatable
      */
     public function hasAnyRole($roles): bool
     {
-        // Кэшируем роли пользователя на 30 минут
+        // Кэшируем роли пользователя на 2 часа
         $userRoles = \Illuminate\Support\Facades\Cache::remember(
             "user_roles_{$this->id}",
-            1800,
+            7200,
             function () {
                 return $this->roles()->pluck('name')->toArray();
             }

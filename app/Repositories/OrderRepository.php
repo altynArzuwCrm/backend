@@ -19,9 +19,9 @@ class OrderRepository
         $cacheKey = 'orders_' . md5($request->fullUrl() . '_' . $user->id);
 
         // Проверяем, нужно ли принудительно обновить кэш
-        $cacheTime = $request->has('force_refresh') ? 0 : 300;
+        $cacheTime = $request->has('force_refresh') ? 0 : 900;
 
-        // Кэшируем результат на 5 минут (или обновляем принудительно)
+        // Кэшируем результат на 15 минут (или обновляем принудительно)
         return Cache::remember($cacheKey, $cacheTime, function () use ($request, $user) {
             $query = Order::with(['project', 'product', 'client', 'stage']);
 
@@ -114,9 +114,9 @@ class OrderRepository
 
     public function getOrderById(int $id): ?OrderDTO
     {
-        // Кэшируем отдельные заказы на 10 минут
+        // Кэшируем отдельные заказы на 30 минут
         $cacheKey = 'order_' . $id;
-        return Cache::remember($cacheKey, 600, function () use ($id) {
+        return Cache::remember($cacheKey, 1800, function () use ($id) {
             $order = Order::with([
                 'project',
                 'product',

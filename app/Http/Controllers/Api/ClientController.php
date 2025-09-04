@@ -54,9 +54,9 @@ class ClientController extends Controller
             $perPage = 30;
         }
 
-        // Кэшируем результаты поиска на 5 минут для быстрых ответов
+        // Кэшируем результаты поиска на 15 минут для быстрых ответов
         $cacheKey = 'clients_' . $user->id . '_' . md5($request->fullUrl());
-        $clients = CacheService::rememberWithTags($cacheKey, 300, function () use ($query, $perPage) {
+        $clients = CacheService::rememberWithTags($cacheKey, 900, function () use ($query, $perPage) {
             return $query->paginate($perPage);
         }, [CacheService::TAG_CLIENTS]);
 
@@ -71,7 +71,7 @@ class ClientController extends Controller
 
         $user = request()->user();
         $cacheKey = 'clients_for_user_' . $user->id . '_roles_' . $user->roles->pluck('name')->implode('-');
-        $clients = CacheService::rememberWithTags($cacheKey, 60, function () use ($user) {
+        $clients = CacheService::rememberWithTags($cacheKey, 1800, function () use ($user) {
             $query = Client::with('contacts');
             if (!$user->hasAnyRole(['admin', 'manager'])) {
                 $assignedClientIds = \App\Models\OrderAssignment::query()

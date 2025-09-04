@@ -22,9 +22,9 @@ class CategoryController extends Controller
             ], 403);
         }
 
-        // Кэшируем результаты на 5 минут
+        // Кэшируем результаты на 15 минут
         $cacheKey = 'categories_' . md5($request->fullUrl());
-        $result = CacheService::rememberWithTags($cacheKey, 300, function () use ($request) {
+        $result = CacheService::rememberWithTags($cacheKey, 900, function () use ($request) {
             $query = Category::query();
 
             // Поиск

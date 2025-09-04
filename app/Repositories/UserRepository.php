@@ -50,9 +50,9 @@ class UserRepository
 
     public function getUserById(int $id): ?UserDTO
     {
-        // Кэшируем отдельных пользователей на 15 минут
+        // Кэшируем отдельных пользователей на 1 час
         $cacheKey = 'user_' . $id;
-        return Cache::remember($cacheKey, 900, function () use ($id) {
+        return Cache::remember($cacheKey, 3600, function () use ($id) {
             $user = User::with(['roles'])->find($id);
 
             if (!$user) {
@@ -100,9 +100,9 @@ class UserRepository
 
     public function getUsersByRole(string $roleName): array
     {
-        // Кэшируем пользователей по роли на 10 минут
+        // Кэшируем пользователей по роли на 30 минут
         $cacheKey = 'users_by_role_' . $roleName;
-        return Cache::remember($cacheKey, 600, function () use ($roleName) {
+        return Cache::remember($cacheKey, 1800, function () use ($roleName) {
             $users = User::with(['roles'])
                 ->whereHas('roles', function ($query) use ($roleName) {
                     $query->where('name', $roleName);

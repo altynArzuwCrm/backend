@@ -49,9 +49,9 @@ class UserController extends Controller
             abort(401, 'Необходима аутентификация');
         }
 
-        // Кэшируем результаты поиска на 5 минут для быстрых ответов
+        // Кэшируем результаты поиска на 15 минут для быстрых ответов
         $cacheKey = 'users_' . md5($request->fullUrl());
-        $result = CacheService::rememberWithTags($cacheKey, 300, function () use ($request) {
+        $result = CacheService::rememberWithTags($cacheKey, 900, function () use ($request) {
             return $this->userRepository->getPaginatedUsers($request);
         }, [CacheService::TAG_USERS]);
 

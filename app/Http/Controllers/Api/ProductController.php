@@ -30,9 +30,9 @@ class ProductController extends Controller
             ], 403);
         }
 
-        // Кэшируем результаты поиска на 5 минут для быстрых ответов
+        // Кэшируем результаты поиска на 15 минут для быстрых ответов
         $cacheKey = 'products_' . md5($request->fullUrl());
-        $result = CacheService::rememberWithTags($cacheKey, 300, function () use ($request) {
+        $result = CacheService::rememberWithTags($cacheKey, 900, function () use ($request) {
             return $this->productRepository->getPaginatedProducts($request);
         }, [CacheService::TAG_PRODUCTS]);
 
@@ -123,7 +123,7 @@ class ProductController extends Controller
             abort(403, 'Доступ запрещён');
         }
 
-        $products = CacheService::rememberWithTags('all_products', 60, function () {
+        $products = CacheService::rememberWithTags('all_products', 1800, function () {
             return Product::select('id', 'name', 'created_at')->orderBy('id')->get();
         }, [CacheService::TAG_PRODUCTS]);
         return response()->json($products);

@@ -60,9 +60,9 @@ class ProjectController extends Controller
             $perPage = 30;
         }
 
-        // Кэшируем результаты поиска на 5 минут для быстрых ответов
+        // Кэшируем результаты поиска на 15 минут для быстрых ответов
         $cacheKey = 'projects_' . $user->id . '_' . md5($request->fullUrl());
-        $projects = CacheService::rememberWithTags($cacheKey, 300, function () use ($query, $perPage) {
+        $projects = CacheService::rememberWithTags($cacheKey, 900, function () use ($query, $perPage) {
             return $query->paginate($perPage);
         }, [CacheService::TAG_PROJECTS]);
 
@@ -180,7 +180,7 @@ class ProjectController extends Controller
             abort(403, 'Доступ запрещён');
         }
 
-        $projects = CacheService::rememberWithTags('all_projects', 60, function () {
+        $projects = CacheService::rememberWithTags('all_projects', 1800, function () {
             return Project::orderBy('id')->get();
         }, [CacheService::TAG_PROJECTS]);
         return $projects;
