@@ -113,3 +113,4 @@ class AssignmentStatusChanged extends Notification
             ],
         ];
     }
+}

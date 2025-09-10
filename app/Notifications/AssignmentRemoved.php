@@ -93,3 +93,4 @@ class AssignmentRemoved extends Notification
             ],
         ];
     }
+}

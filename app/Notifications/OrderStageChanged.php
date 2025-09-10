@@ -116,3 +116,4 @@ class OrderStageChanged extends Notification
             ],
         ];
     }
+}

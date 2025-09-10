@@ -52,6 +52,18 @@ class UserController extends Controller
                 $query->where('is_active', $request->is_active);
             }
 
+            // Добавляем сортировку
+            $sortBy = $request->get('sort_by', 'id');
+            $sortOrder = $request->get('sort_order', 'asc');
+
+            // Проверяем, что поле для сортировки безопасно
+            $allowedSortFields = ['id', 'name', 'username', 'phone', 'is_active', 'created_at', 'updated_at'];
+            if (in_array($sortBy, $allowedSortFields)) {
+                $query->orderBy($sortBy, $sortOrder);
+            } else {
+                $query->orderBy('id', 'asc');
+            }
+
             $perPage = $request->get('per_page', 15);
             $users = $query->paginate($perPage);
 
@@ -322,7 +334,8 @@ class UserController extends Controller
             'phone' => 'nullable|string|max:20',
             'current_password' => 'nullable|string',
             'password' => 'nullable|string|min:6',
-            'image' => 'nullable|image|max:2048'
+            'image' => 'nullable|image|max:2048',
+            'remove_image' => 'nullable|boolean'
         ]);
 
         // Обновление имени
@@ -348,8 +361,15 @@ class UserController extends Controller
             $user->password = Hash::make($request->password);
         }
 
-        // Загрузка изображения
-        if ($request->hasFile('image')) {
+        // Удаление изображения
+        if ($request->has('remove_image') && $request->boolean('remove_image')) {
+            if ($user->image && Storage::disk('public')->exists($user->image)) {
+                Storage::disk('public')->delete($user->image);
+            }
+            $user->image = null;
+        }
+        // Загрузка нового изображения
+        elseif ($request->hasFile('image')) {
             // Удаляем старое изображение если есть
             if ($user->image && Storage::disk('public')->exists($user->image)) {
                 Storage::disk('public')->delete($user->image);

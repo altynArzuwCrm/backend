@@ -92,3 +92,4 @@ class StageRoleAssigned extends Notification
             ],
         ];
     }
+}
