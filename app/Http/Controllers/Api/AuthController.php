@@ -43,6 +43,7 @@ class AuthController extends Controller
         $data = $request->validate([
             'username' => 'required|string',
             'password' => 'required|string',
+            'fcm_token' => 'nullable|string', // FCM токен от мобильного приложения
         ]);
 
         $user = User::where('username', $data['username'])->first();
@@ -53,6 +54,11 @@ class AuthController extends Controller
 
         if (!$user->is_active) {
             return response()->json(['message' => 'Ваш аккаунт деактивирован. Обратитесь к администратору.'], 403);
+        }
+
+        // Сохраняем FCM токен от мобильного приложения
+        if (!empty($data['fcm_token'])) {
+            $user->update(['fcm_token' => $data['fcm_token']]);
         }
 
         $token = $user->createToken('api-token')->plainTextToken;

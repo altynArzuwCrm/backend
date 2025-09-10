@@ -28,7 +28,14 @@ class OrderStageChanged extends Notification
 
     public function via($notifiable)
     {
-        return ['database'];
+        $channels = ['database'];
+        
+        // Добавляем FCM канал, если у пользователя есть FCM токен
+        if ($notifiable->fcm_token) {
+            $channels[] = 'fcm';
+        }
+        
+        return $channels;
     }
 
     public function toDatabase($notifiable)
@@ -69,4 +76,43 @@ class OrderStageChanged extends Notification
             'url' => '/orders?order=' . $this->order->id,
         ];
     }
-}
+
+    public function toFcm($notifiable)
+    {
+        $actionUser = $this->actionUser ?? auth()->user();
+        $oldStageName = $this->oldStage ? $this->oldStage->display_name : 'Не определена';
+        $newStageName = $this->newStage ? $this->newStage->display_name : 'Не определена';
+
+        // Получаем display_name роли
+        $roleDisplayName = '-';
+        if ($this->roleType) {
+            $role = \App\Models\Role::where('name', $this->roleType)->first();
+            $roleDisplayName = $role ? $role->display_name : $this->roleType;
+        }
+
+        // Создаем разные сообщения в зависимости от того, есть ли roleType
+        if ($this->roleType) {
+            $title = $this->order->project?->title ?? 'Заказ #' . $this->order->id;
+            $body = 'Заказ #' . $this->order->id . ' переведен на стадию "' . $newStageName . '" (ваша роль: ' . $roleDisplayName . '). Вам необходимо выполнить работу по заказу.';
+        } else {
+            $title = $this->order->project?->title ?? 'Заказ #' . $this->order->id;
+            $body = 'Заказ #' . $this->order->id . ' переведен со стадии "' . $oldStageName . '" на стадию "' . $newStageName . '" пользователем ' . ($actionUser->display_name ?? $actionUser->username);
+        }
+
+        return [
+            'title' => $title,
+            'body' => $body,
+            'data' => [
+                'type' => 'order_stage_changed',
+                'order_id' => $this->order->id,
+                'project_id' => $this->order->project_id,
+                'old_stage_id' => $this->oldStage ? $this->oldStage->id : null,
+                'old_stage_name' => $oldStageName,
+                'new_stage_id' => $this->newStage ? $this->newStage->id : null,
+                'new_stage_name' => $newStageName,
+                'action_user_name' => $actionUser->display_name ?? $actionUser->username ?? '',
+                'role_type' => $this->roleType,
+                'url' => '/orders?order=' . $this->order->id,
+            ],
+        ];
+    }

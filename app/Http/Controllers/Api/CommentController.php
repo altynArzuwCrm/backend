@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Http\Resources\UserResource;
 use App\Models\Comment;
 use App\Models\Order;
 use App\Models\Project;
@@ -42,7 +43,18 @@ class CommentController extends Controller
             return response()->json(['error' => 'order_id или project_id обязателен'], 402);
         }
 
-        return response()->json($comments);
+        // Преобразуем комментарии с использованием UserResource для пользователей
+        $commentsData = $comments->map(function ($comment) {
+            return [
+                'id' => $comment->id,
+                'text' => $comment->text,
+                'created_at' => $comment->created_at,
+                'updated_at' => $comment->updated_at,
+                'user' => new UserResource($comment->user),
+            ];
+        });
+
+        return response()->json($commentsData);
     }
 
     public function store(Request $request)

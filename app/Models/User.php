@@ -11,7 +11,7 @@ class User extends Authenticatable
 {
     use HasFactory, HasApiTokens, Notifiable;
 
-    protected $fillable = ['name', 'phone', 'username', 'password', 'is_active', 'image'];
+    protected $fillable = ['name', 'phone', 'username', 'password', 'is_active', 'image', 'fcm_token'];
 
     protected static function boot()
     {

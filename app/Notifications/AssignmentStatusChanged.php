@@ -62,4 +62,54 @@ class AssignmentStatusChanged extends Notification
             'changed_at' => now(),
         ];
     }
-}
+
+    public function toFcm($notifiable)
+    {
+        $title = 'Изменен статус назначения';
+        $body = 'Статус вашего назначения на заказ #%order_id% изменен на "%status%"';
+        
+        // Заменяем плейсхолдеры на реальные данные
+        $title = str_replace([
+            '%order_id%',
+            '%stage%',
+            '%old_stage%',
+            '%user%',
+            '%status%',
+            '%role%'
+        ], [
+            $this->order->id ?? '',
+            $this->stage->name ?? '',
+            $this->oldStage->name ?? '',
+            $this->actionUser->name ?? '',
+            $this->status ?? '',
+            $this->roleType ?? ''
+        ], $title);
+        
+        $body = str_replace([
+            '%order_id%',
+            '%stage%',
+            '%old_stage%',
+            '%user%',
+            '%status%',
+            '%role%'
+        ], [
+            $this->order->id ?? '',
+            $this->stage->name ?? '',
+            $this->oldStage->name ?? '',
+            $this->actionUser->name ?? '',
+            $this->status ?? '',
+            $this->roleType ?? ''
+        ], $body);
+
+        return [
+            'title' => $title,
+            'body' => $body,
+            'data' => [
+                'type' => 'assignment_status_changed',
+                'order_id' => $this->order->id ?? null,
+                'stage' => $this->stage->name ?? null,
+                'action_user_name' => $this->actionUser->name ?? '',
+                'url' => '/orders?order=' . ($this->order->id ?? ''),
+            ],
+        ];
+    }

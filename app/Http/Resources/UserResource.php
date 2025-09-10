@@ -26,6 +26,7 @@ class UserResource extends JsonResource
             'username'   => $this->username,
             'phone'      => $this->phone,
             'image'      => $this->image,
+            'fcm_token'  => $this->fcm_token, // FCM токен для push-уведомлений
             'is_active'  => $this->is_active,
             'roles'      => $this->roles->map(function ($role) {
                 return [

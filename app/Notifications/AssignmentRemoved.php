@@ -25,7 +25,14 @@ class AssignmentRemoved extends Notification
 
     public function via($notifiable)
     {
-        return ['database'];
+        $channels = ['database'];
+        
+        // Добавляем FCM канал, если у пользователя есть FCM токен
+        if ($notifiable->fcm_token) {
+            $channels[] = 'fcm';
+        }
+        
+        return $channels;
     }
 
     public function toDatabase($notifiable)
@@ -54,4 +61,35 @@ class AssignmentRemoved extends Notification
             'removed_at' => now(),
         ];
     }
-}
+
+    public function toFcm($notifiable)
+    {
+        $actionUser = $this->actionUser ?? auth()->user();
+
+        // Получаем тип роли из назначения, если не передан явно
+        $roleType = $this->roleType ?? $this->assignment->role_type;
+
+        // Получаем display_name роли
+        $roleDisplayName = '-';
+        if ($roleType) {
+            $role = \App\Models\Role::where('name', $roleType)->first();
+            $roleDisplayName = $role ? $role->display_name : $roleType;
+        }
+
+        $title = 'Назначение удалено';
+        $body = 'Ваше назначение на заказ #' . $this->assignment->order_id . ' (роль: "' . $roleDisplayName . '") было удалено пользователем ' . ($actionUser->display_name ?? $actionUser->username);
+
+        return [
+            'title' => $title,
+            'body' => $body,
+            'data' => [
+                'type' => 'assignment_removed',
+                'order_id' => $this->assignment->order_id,
+                'assignment_id' => $this->assignment->id,
+                'role_type' => $roleType,
+                'stage' => $this->stage,
+                'action_user_name' => $actionUser->display_name ?? $actionUser->username ?? '',
+                'url' => '/orders?order=' . $this->assignment->order_id,
+            ],
+        ];
+    }

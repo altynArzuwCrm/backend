@@ -4,6 +4,7 @@ namespace App\Notifications;
 
 use Illuminate\Bus\Queueable;
 use Illuminate\Notifications\Notification;
+use App\Services\FCMService;
 
 class EndOfDayReminder extends Notification
 {
@@ -24,7 +25,14 @@ class EndOfDayReminder extends Notification
 
     public function via($notifiable)
     {
-        return ['database'];
+        $channels = ['database'];
+
+        // Добавляем FCM канал, если у пользователя есть FCM токен
+        if ($notifiable->fcm_token) {
+            $channels[] = 'fcm';
+        }
+
+        return $channels;
     }
 
     public function toDatabase($notifiable)
@@ -59,6 +67,41 @@ class EndOfDayReminder extends Notification
             'icon' => 'end_of_day',
             'type' => 'daily_reminder',
             'created_at' => now(),
+        ];
+    }
+
+    public function toFcm($notifiable)
+    {
+        $message = "Напоминание о конце рабочего дня - " . $this->date;
+
+        if ($this->pendingOrders > 0 || $this->overdueOrders > 0) {
+            $stats = [];
+            if ($this->pendingOrders > 0) {
+                if ($this->isManagerOrAdmin) {
+                    $stats[] = "В работе: {$this->pendingOrders}";
+                } else {
+                    $stats[] = "Ожидают выполнения: {$this->pendingOrders}";
+                }
+            }
+            if ($this->overdueOrders > 0) {
+                $stats[] = "Просроченные: {$this->overdueOrders}";
+            }
+
+            if (!empty($stats)) {
+                $message .= "\n\n" . implode(", ", $stats);
+            }
+        }
+
+        return [
+            'title' => 'Напоминание о конце рабочего дня',
+            'body' => $message,
+            'data' => [
+                'type' => 'daily_reminder',
+                'date' => $this->date,
+                'pending_orders' => $this->pendingOrders,
+                'overdue_orders' => $this->overdueOrders,
+                'is_manager_or_admin' => $this->isManagerOrAdmin,
+            ],
         ];
     }
 }

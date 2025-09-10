@@ -27,7 +27,14 @@ class OrderAssigned extends Notification
 
     public function via($notifiable)
     {
-        return ['database'];
+        $channels = ['database'];
+
+        // Добавляем FCM канал, если у пользователя есть FCM токен
+        if ($notifiable->fcm_token) {
+            $channels[] = 'fcm';
+        }
+
+        return $channels;
     }
 
     public function toDatabase($notifiable)
@@ -56,6 +63,35 @@ class OrderAssigned extends Notification
             'assigned_at' => now(),
             'icon' => 'assignment',
             'url' => '/orders?order=' . $this->order->id,
+        ];
+    }
+
+    public function toFcm($notifiable)
+    {
+        $actionUser = $this->actionUser ?? auth()->user();
+
+        // Получаем display_name роли
+        $roleDisplayName = '-';
+        if ($this->roleType) {
+            $role = \App\Models\Role::where('name', $this->roleType)->first();
+            $roleDisplayName = $role ? $role->display_name : $this->roleType;
+        }
+
+        $title = $this->order->project?->title ?? 'Заказ #' . $this->order->id;
+        $body = 'Вам назначен новый заказ #' . $this->order->id . ' в роли "' . $roleDisplayName . '" пользователем ' . ($actionUser ? ($actionUser->display_name ?? $actionUser->username) : 'система');
+
+        return [
+            'title' => $title,
+            'body' => $body,
+            'data' => [
+                'type' => 'order_assigned',
+                'order_id' => $this->order->id,
+                'project_id' => $this->order->project_id,
+                'role_type' => $this->roleType,
+                'stage' => $this->stage,
+                'action_user_name' => $actionUser ? ($actionUser->display_name ?? $actionUser->username) : '',
+                'url' => '/orders?order=' . $this->order->id,
+            ],
         ];
     }
 }

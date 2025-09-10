@@ -15,7 +15,9 @@ use App\Models\Stage;
 use App\Models\Role;
 use App\Observers\AuditLogObserver;
 use App\Observers\CacheObserver;
+use App\Channels\FCMChannel;
 use Illuminate\Support\ServiceProvider;
+use Illuminate\Support\Facades\Notification;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -48,5 +50,10 @@ class AppServiceProvider extends ServiceProvider
         ProductAssignment::observe(CacheObserver::class);
         Stage::observe(CacheObserver::class);
         Role::observe(CacheObserver::class);
+
+        // Регистрируем FCM канал
+        Notification::extend('fcm', function ($app) {
+            return $app->make(FCMChannel::class);
+        });
     }
 }

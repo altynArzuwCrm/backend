@@ -25,6 +25,8 @@ Route::post('login', [AuthController::class, 'login'])->name('login');
 Route::middleware(['auth:sanctum', 'handle.null.relations'])->group(function () {
     Route::post('logout', [AuthController::class, 'logout']);
     Route::get('me', [AuthController::class, 'me']);
+    Route::post('user/profile', [UserController::class, 'updateProfile']);
+    Route::post('validate-password', [UserController::class, 'validatePassword']);
 
     Route::get('stats', [StatsController::class, 'index']);
     Route::get('stats/dashboard', [\App\Http\Controllers\Api\StatsController::class, 'dashboard']);
@@ -84,7 +86,7 @@ Route::middleware(['auth:sanctum', 'handle.null.relations'])->group(function () 
     Route::apiResource('projects', ProjectController::class);
     Route::apiResource('users', UserController::class);
     Route::get('users/role/{role}', [UserController::class, 'getByRole']);
-    Route::patch('users/{user}/toggle-active', [UserController::class, 'toggleActive']);
+    Route::patch('users/{userId}/toggle-active', [UserController::class, 'toggleActive']);
     Route::get('notifications', [\App\Http\Controllers\Api\NotificationController::class, 'index']);
     Route::get('notifications/unread', [\App\Http\Controllers\Api\NotificationController::class, 'unread']);
     Route::post('notifications/{id}/read', [\App\Http\Controllers\Api\NotificationController::class, 'markAsRead']);
