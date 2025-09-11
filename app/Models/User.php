@@ -22,6 +22,11 @@ class User extends Authenticatable
             if ($user->phone) {
                 $user->phone = trim($user->phone);
             }
+            
+            // Обрабатываем FCM токен - пустые строки преобразуем в null
+            if ($user->fcm_token === '') {
+                $user->fcm_token = null;
+            }
         });
 
         // Очищаем кэш ролей при изменении пользователя

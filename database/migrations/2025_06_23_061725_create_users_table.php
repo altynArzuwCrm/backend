@@ -14,7 +14,7 @@ return new class extends Migration
             $table->string('image')->nullable();
             $table->boolean('is_active')->default(true);
             $table->string('phone')->nullable();
-            $table->string('fcm_token')->nullable()
+            $table->string('fcm_token')->nullable();
             $table->string('username')->unique();
             $table->string('password');
             $table->timestamps();

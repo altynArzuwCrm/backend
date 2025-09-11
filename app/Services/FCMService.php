@@ -20,7 +20,7 @@ class FCMService
     /**
      * Получить access token для FCM v1 API
      */
-    private function getAccessToken()
+    public function getAccessToken()
     {
         try {
             $client = new Client();

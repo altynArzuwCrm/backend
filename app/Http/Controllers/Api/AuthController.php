@@ -57,8 +57,14 @@ class AuthController extends Controller
         }
 
         // Сохраняем FCM токен от мобильного приложения
-        if (!empty($data['fcm_token'])) {
-            $user->update(['fcm_token' => $data['fcm_token']]);
+        if (array_key_exists('fcm_token', $data)) {
+            $fcmToken = $data['fcm_token'];
+            if ($fcmToken === null || $fcmToken === '') {
+                $user->update(['fcm_token' => null]);
+            } else {
+                $fcmToken = trim($fcmToken);
+                $user->update(['fcm_token' => $fcmToken ?: null]);
+            }
         }
 
         $token = $user->createToken('api-token')->plainTextToken;
