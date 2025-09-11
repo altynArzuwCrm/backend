@@ -15,7 +15,6 @@ use App\Http\Controllers\Api\AuditLogController;
 use App\Http\Controllers\Api\ProductAssignmentController;
 use App\Http\Controllers\Api\RoleController;
 use App\Http\Controllers\Api\CategoryController;
-use App\Http\Controllers\Api\FCMController;
 use Illuminate\Support\Facades\Route;
 
 Route::post('register', [AuthController::class, 'register']);
@@ -93,14 +92,6 @@ Route::middleware(['auth:sanctum', 'handle.null.relations'])->group(function () 
     Route::post('notifications/{id}/read', [\App\Http\Controllers\Api\NotificationController::class, 'markAsRead']);
     Route::post('notifications/read-all', [\App\Http\Controllers\Api\NotificationController::class, 'markAllAsRead']);
 
-    // FCM (Firebase Cloud Messaging) routes
-    Route::prefix('fcm')->group(function () {
-        Route::post('update-token', [FCMController::class, 'updateToken']);
-        Route::post('remove-token', [FCMController::class, 'removeToken']);
-        Route::post('validate-token', [FCMController::class, 'validateToken']);
-        Route::post('send-test', [FCMController::class, 'sendTestNotification']);
-        Route::get('stats', [FCMController::class, 'getStats']);
-    });
     Route::apiResource('roles', RoleController::class);
     Route::post('roles/{role}/assign-users', [RoleController::class, 'assignUsers']);
     Route::post('roles/{role}/remove-users', [RoleController::class, 'removeUsers']);
