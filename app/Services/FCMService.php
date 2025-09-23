@@ -57,6 +57,14 @@ class FCMService
             return false;
         }
 
+        // Преобразуем данные в строки для FCM API v1
+        $stringData = [];
+        if (is_array($data) && !empty($data)) {
+            foreach ($data as $key => $value) {
+                $stringData[$key] = (string) $value;
+            }
+        }
+
         $payload = [
             'message' => [
                 'token' => $fcmToken,
@@ -64,7 +72,6 @@ class FCMService
                     'title' => $title,
                     'body' => $body,
                 ],
-                'data' => $data,
                 'android' => [
                     'notification' => [
                         'sound' => 'default',
@@ -82,6 +89,11 @@ class FCMService
                 ],
             ],
         ];
+
+        // Добавляем данные только если они есть
+        if (!empty($stringData)) {
+            $payload['message']['data'] = $stringData;
+        }
 
         return $this->sendRequest($payload, $projectId);
     }
