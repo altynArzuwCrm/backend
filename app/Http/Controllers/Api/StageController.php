@@ -5,8 +5,10 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Stage;
 use App\Models\Role;
+use App\Models\User;
 use App\Services\CacheService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Cache;
@@ -216,9 +218,10 @@ class StageController extends Controller
 
     public function getAllUsersByStageRoles(Request $request)
     {
+        $user = Auth::user();
         Log::info('StageController::getAllUsersByStageRoles called', [
-            'user_id' => auth()->id(),
-            'user_roles' => auth()->user()->roles->pluck('name')->toArray()
+            'user_id' => $user ? $user->id : null,
+            'user_roles' => $user ? $user->roles->pluck('name')->toArray() : []
         ]);
 
         // Временно убираем проверку прав для отладки
@@ -229,37 +232,59 @@ class StageController extends Controller
         //     abort(403, 'Доступ запрещён');
         // }
 
-        $stages = Stage::with(['roles.users' => function ($query) {
-            $query->select('users.id', 'name', 'username', 'phone');
-        }])->get();
+        // Кешируем результат на 30 минут с тегами для инвалидации
+        $cacheKey = 'stages_users_by_roles_all';
+        $result = CacheService::rememberWithTags($cacheKey, 1800, function () {
+            $stages = Stage::with(['roles.users' => function ($query) {
+                $query->select('users.id', 'name', 'username', 'phone', 'is_active')
+                    ->where('is_active', true); // Только активные пользователи
+            }])->get();
 
-        Log::info('Stages loaded with roles and users', [
-            'stages_count' => $stages->count(),
-            'stages_with_roles' => $stages->map(function ($stage) {
-                return [
-                    'stage_id' => $stage->id,
-                    'stage_name' => $stage->name,
-                    'roles_count' => $stage->roles->count(),
-                    'users_count' => $stage->roles->sum(function ($role) {
-                        return $role->users->count();
-                    })
-                ];
-            })->toArray()
-        ]);
+            // Дополнительная проверка: логируем всех пользователей с ролями
+            $allUsersWithRoles = User::with('roles')->where('is_active', true)->get();
+            Log::info('All active users with roles', [
+                'total_users' => $allUsersWithRoles->count(),
+                'users_with_roles' => $allUsersWithRoles->filter(function ($user) {
+                    return $user->roles->count() > 0;
+                })->map(function ($user) {
+                    return [
+                        'id' => $user->id,
+                        'name' => $user->name,
+                        'roles' => $user->roles->pluck('name')->toArray()
+                    ];
+                })->toArray()
+            ]);
 
-        $result = [];
-        foreach ($stages as $stage) {
-            $users = collect();
-            foreach ($stage->roles as $role) {
-                $users = $users->merge($role->users);
+            Log::info('Stages loaded with roles and users', [
+                'stages_count' => $stages->count(),
+                'stages_with_roles' => $stages->map(function ($stage) {
+                    return [
+                        'stage_id' => $stage->id,
+                        'stage_name' => $stage->name,
+                        'roles_count' => $stage->roles->count(),
+                        'users_count' => $stage->roles->sum(function ($role) {
+                            return $role->users->count();
+                        })
+                    ];
+                })->toArray()
+            ]);
+
+            $result = [];
+            foreach ($stages as $stage) {
+                $users = collect();
+                foreach ($stage->roles as $role) {
+                    $users = $users->merge($role->users);
+                }
+                $result[$stage->id] = $users->unique('id')->values();
             }
-            $result[$stage->id] = $users->unique('id')->values();
-        }
 
-        Log::info('getAllUsersByStageRoles result', [
-            'result_keys' => array_keys($result),
-            'total_users' => collect($result)->flatten(1)->count()
-        ]);
+            Log::info('getAllUsersByStageRoles result', [
+                'result_keys' => array_keys($result),
+                'total_users' => collect($result)->flatten(1)->count()
+            ]);
+
+            return $result;
+        }, [CacheService::TAG_STAGES, CacheService::TAG_USERS, CacheService::TAG_ROLES]);
 
         return response()->json($result);
     }
