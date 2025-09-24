@@ -55,7 +55,7 @@ class CacheManagementCommand extends Command
         if (!$type) {
             $type = $this->choice(
                 'Какой тип кэша очистить?',
-                ['users', 'orders', 'products', 'clients', 'projects', 'stages', 'roles', 'stats', 'all'],
+                ['users', 'orders', 'products', 'clients', 'projects', 'stages', 'roles', 'stage-roles', 'stats', 'all'],
                 'all'
             );
         }
@@ -63,7 +63,8 @@ class CacheManagementCommand extends Command
         switch ($type) {
             case 'users':
                 CacheService::invalidateByTags([CacheService::TAG_USERS]);
-                $this->info('Кэш пользователей очищен');
+                CacheService::invalidateUsersByStageRolesCache();
+                $this->info('Кэш пользователей и пользователей по ролям стадий очищен');
                 break;
             case 'orders':
                 CacheService::invalidateByTags([CacheService::TAG_ORDERS]);
@@ -87,7 +88,12 @@ class CacheManagementCommand extends Command
                 break;
             case 'roles':
                 CacheService::invalidateRoleCaches();
-                $this->info('Кэш ролей очищен');
+                CacheService::invalidateUsersByStageRolesCache();
+                $this->info('Кэш ролей и пользователей по ролям стадий очищен');
+                break;
+            case 'stage-roles':
+                CacheService::invalidateUsersByStageRolesCache();
+                $this->info('Кэш пользователей по ролям стадий очищен');
                 break;
             case 'stats':
                 CacheService::invalidateStatsCaches();
