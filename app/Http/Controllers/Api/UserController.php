@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\UserResource;
 use App\Models\User;
+use App\Models\ProductAssignment;
 use App\Services\CacheService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -130,6 +131,14 @@ class UserController extends Controller
             'roles.*' => 'exists:roles,id',
             'is_active' => 'boolean',
         ], [
+            'name.required' => 'Имя обязательно для заполнения.',
+            'username.required' => 'Логин обязателен для заполнения.',
+            'username.unique' => 'Пользователь с таким логином уже существует.',
+            'password.required' => 'Пароль обязателен для заполнения.',
+            'password.min' => 'Пароль должен содержать минимум 6 символов.',
+            'roles.required' => 'Необходимо выбрать хотя бы одну роль.',
+            'roles.min' => 'Необходимо выбрать хотя бы одну роль.',
+            'roles.*.exists' => 'Выбранная роль не существует.',
             'image.image' => 'Файл должен быть изображением.',
             'image.mimes' => 'Изображение должно быть в формате: jpeg, png, jpg, gif или webp.',
             'image.max' => 'Размер изображения не должен превышать 10MB.',
@@ -172,6 +181,9 @@ class UserController extends Controller
 
         $newUser->roles()->sync($data['roles']);
 
+        // Очищаем кэш пользователей по ролям стадий
+        CacheService::invalidateUsersByStageRolesCache();
+
         return new UserResource($newUser->fresh('roles'));
     }
 
@@ -192,6 +204,12 @@ class UserController extends Controller
             'roles.*' => 'exists:roles,id',
             'is_active' => 'boolean',
         ], [
+            'name.string' => 'Имя должно быть строкой.',
+            'username.string' => 'Логин должен быть строкой.',
+            'username.unique' => 'Пользователь с таким логином уже существует.',
+            'password.min' => 'Пароль должен содержать минимум 6 символов.',
+            'roles.min' => 'Необходимо выбрать хотя бы одну роль.',
+            'roles.*.exists' => 'Выбранная роль не существует.',
             'image.image' => 'Файл должен быть изображением.',
             'image.mimes' => 'Изображение должно быть в формате: jpeg, png, jpg, gif или webp.',
             'image.max' => 'Размер изображения не должен превышать 10MB.',
@@ -250,11 +268,22 @@ class UserController extends Controller
             $user->roles()->sync($data['roles']);
         }
 
+        // Очищаем кэш пользователей по ролям стадий
+        CacheService::invalidateUsersByStageRolesCache();
+
         return response()->json(new UserResource($user->fresh('roles')));
     }
 
-    public function destroy(User $userToDelete)
+    public function destroy($id)
     {
+        $userToDelete = User::find($id);
+
+        if (!$userToDelete) {
+            return response()->json([
+                'message' => 'Пользователь не найден'
+            ], 404);
+        }
+
         $currentUser = Auth::user();
         if (!$currentUser || !$currentUser->hasRole('admin')) {
             abort(403, 'Доступ запрещён. Только администраторы могут удалять пользователей.');
@@ -264,21 +293,39 @@ class UserController extends Controller
             abort(403, 'Вы не можете удалить самого себя.');
         }
 
-        $assignmentsCount = $userToDelete->assignments()->count();
+        // Проверяем только назначения в заказах, которые могут помешать удалению
+        $orderAssignmentsCount = $userToDelete->assignments()->count();
 
-        if ($assignmentsCount > 0) {
+        if ($orderAssignmentsCount > 0) {
             return response()->json([
-                'message' => "Невозможно удалить пользователя, который назначен в {$assignmentsCount} заказах"
+                'message' => "Невозможно удалить пользователя, который назначен в {$orderAssignmentsCount} заказах"
             ], 422);
         }
 
-        if ($userToDelete->image && Storage::disk('public')->exists($userToDelete->image)) {
-            Storage::disk('public')->delete($userToDelete->image);
+        try {
+            // Удаляем изображение пользователя
+            if ($userToDelete->image && Storage::disk('public')->exists($userToDelete->image)) {
+                Storage::disk('public')->delete($userToDelete->image);
+            }
+
+            // Удаляем пользователя
+            $deleted = $userToDelete->delete();
+
+            if (!$deleted) {
+                return response()->json([
+                    'message' => 'Ошибка при удалении пользователя'
+                ], 500);
+            }
+
+            // Очищаем кэш пользователей по ролям стадий
+            CacheService::invalidateUsersByStageRolesCache();
+
+            return response()->json(['message' => 'Пользователь удалён']);
+        } catch (\Exception $e) {
+            return response()->json([
+                'message' => 'Ошибка при удалении пользователя: ' . $e->getMessage()
+            ], 500);
         }
-
-        $userToDelete->delete();
-
-        return response()->json(['message' => 'Пользователь удалён']);
     }
 
     public function toggleActive(Request $request, $userId)
@@ -303,6 +350,9 @@ class UserController extends Controller
 
         // Очищаем кэш ролей пользователя
         \Illuminate\Support\Facades\Cache::forget("user_roles_{$userId}");
+
+        // Очищаем кэш пользователей по ролям стадий
+        CacheService::invalidateUsersByStageRolesCache();
 
         return response()->json([
             'message' => $newStatus ? 'Пользователь активирован' : 'Пользователь деактивирован',
