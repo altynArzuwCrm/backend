@@ -144,7 +144,7 @@ class ProductAssignmentController extends Controller
         }
 
         $data = $request->validate([
-            'assignments' => 'required|array',
+            'assignments' => 'array',
             'assignments.*.user_id' => 'required|exists:users,id',
             'assignments.*.role_type' => 'required|string|in:' . implode(',', $availableRoles),
             'assignments.*.is_active' => 'sometimes|boolean'
@@ -152,45 +152,54 @@ class ProductAssignmentController extends Controller
 
         $currentAssignments = $product->assignments()->get();
 
-        $newAssignmentsMap = collect($data['assignments'])->keyBy(function ($a) {
-            return $a['user_id'] . '_' . $a['role_type'];
-        });
-
-        foreach ($currentAssignments as $assignment) {
-            $key = $assignment->user_id . '_' . $assignment->role_type;
-
-            if ($newAssignmentsMap->has($key)) {
-                $newData = $newAssignmentsMap->get($key);
-                $assignment->update([
-                    'is_active' => $newData['is_active'] ?? true
-                ]);
-                $newAssignmentsMap->forget($key);
-            } else {
-                // Было: $assignment->update(['is_active' => false]);
-                // Стало: физическое удаление
+        // Если массив назначений пустой, удаляем все существующие назначения
+        if (empty($data['assignments'])) {
+            foreach ($currentAssignments as $assignment) {
                 $assignment->delete();
+            }
+        } else {
+            $newAssignmentsMap = collect($data['assignments'])->keyBy(function ($a) {
+                return $a['user_id'] . '_' . $a['role_type'];
+            });
+
+            foreach ($currentAssignments as $assignment) {
+                $key = $assignment->user_id . '_' . $assignment->role_type;
+
+                if ($newAssignmentsMap->has($key)) {
+                    $newData = $newAssignmentsMap->get($key);
+                    $assignment->update([
+                        'is_active' => $newData['is_active'] ?? true
+                    ]);
+                    $newAssignmentsMap->forget($key);
+                } else {
+                    // Физическое удаление назначения
+                    $assignment->delete();
+                }
             }
         }
 
         $createdAssignments = [];
         $errors = [];
 
-        foreach ($newAssignmentsMap as $assignmentData) {
-            try {
-                $user = \App\Models\User::findOrFail($assignmentData['user_id']);
-                if (!$user->hasRole($assignmentData['role_type'])) {
-                    $errors[] = "Пользователь не имеет роль {$assignmentData['role_type']}";
-                    continue;
-                }
+        // Создаем новые назначения только если массив не пустой
+        if (!empty($data['assignments'])) {
+            foreach ($newAssignmentsMap as $assignmentData) {
+                try {
+                    $user = \App\Models\User::findOrFail($assignmentData['user_id']);
+                    if (!$user->hasRole($assignmentData['role_type'])) {
+                        $errors[] = "Пользователь не имеет роль {$assignmentData['role_type']}";
+                        continue;
+                    }
 
-                $assignment = $product->assignments()->create([
-                    'user_id' => $assignmentData['user_id'],
-                    'role_type' => $assignmentData['role_type'],
-                    'is_active' => $assignmentData['is_active'] ?? true
-                ]);
-                $createdAssignments[] = $assignment->load('user');
-            } catch (\Exception $e) {
-                $errors[] = $e->getMessage();
+                    $assignment = $product->assignments()->create([
+                        'user_id' => $assignmentData['user_id'],
+                        'role_type' => $assignmentData['role_type'],
+                        'is_active' => $assignmentData['is_active'] ?? true
+                    ]);
+                    $createdAssignments[] = $assignment->load('user');
+                } catch (\Exception $e) {
+                    $errors[] = $e->getMessage();
+                }
             }
         }
 

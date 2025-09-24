@@ -222,6 +222,11 @@ class User extends Authenticatable
         return $this->hasMany(OrderAssignment::class, 'user_id');
     }
 
+    public function productAssignments()
+    {
+        return $this->hasMany(ProductAssignment::class, 'user_id');
+    }
+
     public function comments()
     {
         return $this->hasMany(Comment::class);

@@ -218,6 +218,31 @@ class CacheService
     }
 
     /**
+     * Invalidate users by stage roles cache
+     */
+    public static function invalidateUsersByStageRolesCache(): void
+    {
+        // Очищаем кэш пользователей по ролям стадий
+        self::invalidateByTags([self::TAG_USERS, self::TAG_STAGES, self::TAG_ROLES]);
+
+        // Также очищаем специфичные ключи для пользователей по ролям стадий
+        $patterns = [
+            'stages_users_by_roles_*',
+            'users_by_stage_roles_*',
+            'stages_with_roles_and_users_*'
+        ];
+
+        foreach ($patterns as $pattern) {
+            $keys = Cache::get('cache_keys_' . str_replace('*', '', $pattern), []);
+            foreach ($keys as $key) {
+                Cache::forget($key);
+            }
+        }
+
+        Log::info('Users by stage roles cache invalidated');
+    }
+
+    /**
      * Get cache statistics
      */
     public static function getStats(): array

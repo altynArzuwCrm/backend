@@ -157,7 +157,6 @@ class StatsController extends Controller
 
         $recentAssignments = $userAssignments
             ->sortByDesc('created_at')
-            ->take(10)
             ->map(function ($assignment) {
                 return [
                     'id' => $assignment->order_id,
@@ -166,6 +165,10 @@ class StatsController extends Controller
                     'status' => $assignment->status,
                     'deadline' => $assignment->order?->deadline,
                 ];
+            })
+            ->filter(function ($assignment) {
+                // Показываем только назначения с существующими заказами
+                return $assignment['product_name'] !== null;
             });
 
         $delayedAssignments = $userAssignments
@@ -196,13 +199,14 @@ class StatsController extends Controller
             });
 
         $ordersByUser = DB::table('order_assignments')->select('user_id', DB::raw('count(*) as total'))
+            ->whereNull('deleted_at') // Исключаем удаленные назначения
             ->groupBy('user_id')
             ->get()
             ->map(function ($row) {
                 $user = \App\Models\User::find($row->user_id);
                 $orders = \App\Models\OrderAssignment::where('user_id', $row->user_id)
+                    ->whereNull('deleted_at') // Исключаем удаленные назначения
                     ->with(['order.product', 'order.stage'])
-                    ->limit(10)
                     ->get()
                     ->map(function ($a) {
                         return [
@@ -218,6 +222,10 @@ class StatsController extends Controller
                     'total' => $row->total,
                     'orders' => $orders,
                 ];
+            })
+            ->filter(function ($userData) {
+                // Показываем только сотрудников с активными назначениями
+                return $userData['orders'] && count($userData['orders']) > 0;
             });
 
         $closedCount = Order::whereHas('stage', function ($query) {
