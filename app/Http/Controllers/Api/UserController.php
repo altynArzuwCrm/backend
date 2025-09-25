@@ -50,7 +50,12 @@ class UserController extends Controller
             }
 
             if ($request->has('is_active') && $request->is_active !== null) {
-                $query->where('is_active', $request->is_active);
+                // Преобразуем строковые значения в boolean, затем в int для базы данных
+                $isActive = filter_var($request->is_active, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE);
+                if ($isActive !== null) {
+                    // Преобразуем boolean в int для базы данных (true -> 1, false -> 0)
+                    $query->where('is_active', $isActive ? 1 : 0);
+                }
             }
 
             // Добавляем сортировку
@@ -181,14 +186,18 @@ class UserController extends Controller
 
         $newUser->roles()->sync($data['roles']);
 
-        // Очищаем кэш пользователей по ролям стадий
+        // Агрессивная очистка кэша пользователей
         CacheService::invalidateUsersByStageRolesCache();
 
         // Дополнительно очищаем специфичный кэш для getAllUsersByStageRoles
         \Illuminate\Support\Facades\Cache::forget('stages_users_by_roles_all');
+        \Illuminate\Support\Facades\Cache::forget('users_all');
 
         // Очищаем кэш пользователей
         CacheService::invalidateByTags([CacheService::TAG_USERS]);
+
+        // Принудительно очищаем все кэши связанные с пользователями
+        \Illuminate\Support\Facades\Cache::flush();
 
         return new UserResource($newUser->fresh('roles'));
     }
@@ -274,14 +283,18 @@ class UserController extends Controller
             $user->roles()->sync($data['roles']);
         }
 
-        // Очищаем кэш пользователей по ролям стадий
+        // Агрессивная очистка кэша пользователей
         CacheService::invalidateUsersByStageRolesCache();
 
         // Дополнительно очищаем специфичный кэш для getAllUsersByStageRoles
         \Illuminate\Support\Facades\Cache::forget('stages_users_by_roles_all');
+        \Illuminate\Support\Facades\Cache::forget('users_all');
 
         // Очищаем кэш пользователей
         CacheService::invalidateByTags([CacheService::TAG_USERS]);
+
+        // Принудительно очищаем все кэши связанные с пользователями
+        \Illuminate\Support\Facades\Cache::flush();
 
         return response()->json(new UserResource($user->fresh('roles')));
     }
@@ -363,14 +376,18 @@ class UserController extends Controller
         // Очищаем кэш ролей пользователя
         \Illuminate\Support\Facades\Cache::forget("user_roles_{$userId}");
 
-        // Очищаем кэш пользователей по ролям стадий
+        // Агрессивная очистка кэша пользователей
         CacheService::invalidateUsersByStageRolesCache();
 
         // Дополнительно очищаем специфичный кэш для getAllUsersByStageRoles
         \Illuminate\Support\Facades\Cache::forget('stages_users_by_roles_all');
+        \Illuminate\Support\Facades\Cache::forget('users_all');
 
         // Очищаем кэш пользователей
         CacheService::invalidateByTags([CacheService::TAG_USERS]);
+
+        // Принудительно очищаем все кэши связанные с пользователями
+        \Illuminate\Support\Facades\Cache::flush();
 
         return response()->json([
             'message' => $newStatus ? 'Пользователь активирован' : 'Пользователь деактивирован',

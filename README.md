@@ -710,18 +710,6 @@ Log::info('Order created', [
 ]);
 ```
 
-### Health checks
-```php
-// Проверка состояния системы
-Route::get('/health', function () {
-    return response()->json([
-        'status' => 'healthy',
-        'timestamp' => now(),
-        'database' => DB::connection()->getPdo() ? 'connected' : 'disconnected',
-        'cache' => Cache::store()->get('health_check') ? 'working' : 'not working'
-    ]);
-});
-```
 
 ### Метрики производительности
 ```php

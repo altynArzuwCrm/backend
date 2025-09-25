@@ -242,6 +242,17 @@ class CacheService
         // Дополнительно очищаем специфичный кэш для getAllUsersByStageRoles
         Cache::forget('stages_users_by_roles_all');
 
+        // Очищаем все кэши связанные с пользователями
+        Cache::forget('users_all');
+        Cache::forget('stages_users_by_roles_all');
+
+        // Очищаем кэш по паттернам
+        $cacheKeys = Cache::get('cache_keys_' . self::TAG_USERS, []);
+        foreach ($cacheKeys as $key) {
+            Cache::forget($key);
+        }
+        Cache::forget('cache_keys_' . self::TAG_USERS);
+
         Log::info('Users by stage roles cache invalidated');
     }
 

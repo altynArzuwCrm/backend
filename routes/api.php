@@ -15,7 +15,11 @@ use App\Http\Controllers\Api\AuditLogController;
 use App\Http\Controllers\Api\ProductAssignmentController;
 use App\Http\Controllers\Api\RoleController;
 use App\Http\Controllers\Api\CategoryController;
+use App\Http\Controllers\Api\HealthController;
 use Illuminate\Support\Facades\Route;
+
+// Health check endpoint (no authentication required)
+Route::get('health', [HealthController::class, 'check']);
 
 Route::post('register', [AuthController::class, 'register']);
 Route::post('login', [AuthController::class, 'login'])->name('login');

@@ -156,13 +156,6 @@ class DashboardPolicy
         return $user->hasAnyRole(['admin', 'manager', 'power_user']);
     }
 
-    /**
-     * Determine whether the user can view system health.
-     */
-    public function viewSystemHealth(User $user): bool
-    {
-        return $user->hasAnyRole(['admin', 'manager']);
-    }
 
     /**
      * Determine whether the user can view performance metrics.
