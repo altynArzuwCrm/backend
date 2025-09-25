@@ -28,6 +28,11 @@ return Application::configure(basePath: dirname(__DIR__))
 
         // Добавляем CORS middleware для решения проблем с cross-origin
         $middleware->prepend(HandleCors::class);
+        
+        // Добавляем CORS middleware для API routes
+        $middleware->api(prepend: [
+            HandleCors::class,
+        ]);
 
         // Добавляем middleware для автоматической очистки кэша
         $middleware->append(ClearCacheMiddleware::class);

@@ -232,9 +232,9 @@ class StageController extends Controller
         //     abort(403, 'Доступ запрещён');
         // }
 
-        // Кешируем результат на 30 минут с тегами для инвалидации
+        // Кешируем результат на 5 минут с тегами для инвалидации (уменьшено с 30 минут)
         $cacheKey = 'stages_users_by_roles_all';
-        $result = CacheService::rememberWithTags($cacheKey, 1800, function () {
+        $result = CacheService::rememberWithTags($cacheKey, 300, function () {
             $stages = Stage::with(['roles.users' => function ($query) {
                 $query->select('users.id', 'name', 'username', 'phone', 'is_active')
                     ->where('is_active', true); // Только активные пользователи

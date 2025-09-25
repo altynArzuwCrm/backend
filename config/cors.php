@@ -27,7 +27,7 @@ return [
         'http://localhost:5177',           // Development
         'http://localhost:3000',           // Development alternative
         'https://crm.ltm.studio',          // Production
-        'https://www.crm.ltm.studio'
+        'https://www.crm.ltm.studio',      // Production www
     ],
 
     'allowed_origins_patterns' => [
@@ -35,11 +35,25 @@ return [
         'https://*.ltm.studio',            // Все поддомены ltm.studio
     ],
 
-    'allowed_headers' => ['*'],
+    'allowed_headers' => [
+        'Accept',
+        'Authorization',
+        'Content-Type',
+        'X-Requested-With',
+        'X-CSRF-TOKEN',
+        'X-XSRF-TOKEN',
+    ],
 
-    'exposed_headers' => [],
+    'exposed_headers' => [
+        'Cache-Control',
+        'Content-Language',
+        'Content-Type',
+        'Expires',
+        'Last-Modified',
+        'Pragma',
+    ],
 
-    'max_age' => 0,
+    'max_age' => 86400, // 24 часа
 
     'supports_credentials' => true,
 
