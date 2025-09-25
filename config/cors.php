@@ -21,12 +21,19 @@ return [
 
     'allowed_origins' => [
         'http://localhost:5173',           // Development
+        'http://localhost:5174',           // Development
+        'http://localhost:5175',           // Development
+        'http://localhost:5176',           // Development
+        'http://localhost:5177',           // Development
         'http://localhost:3000',           // Development alternative
-        'https://your-domain.com',         // Production - замените на ваш домен
-        'https://www.your-domain.com',     // Production www - замените на ваш домен
+        'https://crm.ltm.studio',          // Production
+        'https://www.crm.ltm.studio'
     ],
 
-    'allowed_origins_patterns' => [],
+    'allowed_origins_patterns' => [
+        'http://localhost:*',              // Все localhost порты
+        'https://*.ltm.studio',            // Все поддомены ltm.studio
+    ],
 
     'allowed_headers' => ['*'],
 
