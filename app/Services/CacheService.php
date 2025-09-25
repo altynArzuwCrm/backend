@@ -239,6 +239,9 @@ class CacheService
             }
         }
 
+        // Дополнительно очищаем специфичный кэш для getAllUsersByStageRoles
+        Cache::forget('stages_users_by_roles_all');
+
         Log::info('Users by stage roles cache invalidated');
     }
 
