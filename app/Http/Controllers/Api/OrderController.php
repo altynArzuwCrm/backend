@@ -42,43 +42,20 @@ class OrderController extends Controller
 
     public function show(Order $order)
     {
-        Log::info('OrderController::show called', [
-            'order_id' => $order->id,
-            'user_id' => request()->user()->id,
-            'user_roles' => request()->user()->roles->pluck('name')->toArray()
-        ]);
+        // Убрано подробное отладочное логирование запроса
 
         $user = request()->user();
 
         if (Gate::denies('view', $order)) {
-            Log::warning('Access denied for order view', [
-                'order_id' => $order->id,
-                'user_id' => $user->id
-            ]);
             abort(403, 'Доступ запрещён');
         }
 
         try {
-            Log::info('Loading order data', [
-                'order_id' => $order->id
-            ]);
-
             $orderDTO = $this->orderRepository->getOrderById($order->id);
 
             if (!$orderDTO) {
-                Log::warning('Order not found in repository', [
-                    'order_id' => $order->id
-                ]);
                 abort(404, 'Заказ не найден');
             }
-
-            Log::info('Order loaded successfully', [
-                'order_id' => $order->id,
-                'has_client' => !is_null($orderDTO->client),
-                'has_project' => !is_null($orderDTO->project),
-                'has_product' => !is_null($orderDTO->product),
-                'assignments_count' => count($orderDTO->assignments)
-            ]);
 
             return response()->json($orderDTO->toArray());
         } catch (\Exception $e) {
@@ -234,7 +211,7 @@ class OrderController extends Controller
                 // Проверяем, что назначение создается только для выбранных стадий
                 if (isset($assignmentData['stage_id']) && !empty($selectedStages)) {
                     if (!in_array($assignmentData['stage_id'], $selectedStages)) {
-                        \Log::warning("Attempted to create assignment for non-selected stage: {$assignmentData['stage_id']}");
+                        // Пропускаем назначения для невыбранных стадий
                         continue; // Пропускаем назначения для невыбранных стадий
                     }
                 }
@@ -265,11 +242,7 @@ class OrderController extends Controller
                             $assignmentData['role_type'],
                             $order->stage ? $order->stage->name : null
                         ));
-                        \Log::info('OrderAssigned notification sent', [
-                            'user_id' => $assignedUser->id,
-                            'order_id' => $order->id,
-                            'assignment_id' => $assignment->id
-                        ]);
+                        // Уведомление отправлено успешно
                     } catch (\Exception $e) {
                         \Log::error('Failed to send OrderAssigned notification', [
                             'user_id' => $assignedUser->id,
@@ -382,7 +355,7 @@ class OrderController extends Controller
                 // Проверяем, что назначение создается только для выбранных стадий
                 if (isset($assignmentData['stage_id']) && !empty($selectedStages)) {
                     if (!in_array($assignmentData['stage_id'], $selectedStages)) {
-                        \Log::warning("Attempted to create assignment for non-selected stage: {$assignmentData['stage_id']}");
+                        // Пропуск назначения для невыбранной стадии
                         continue; // Пропускаем назначения для невыбранных стадий
                     }
                 }
@@ -413,11 +386,7 @@ class OrderController extends Controller
                             $assignmentData['role_type'],
                             $order->stage ? $order->stage->name : null
                         ));
-                        \Log::info('OrderAssigned notification sent', [
-                            'user_id' => $assignedUser->id,
-                            'order_id' => $order->id,
-                            'assignment_id' => $assignment->id
-                        ]);
+                        // Уведомление отправлено успешно
                     } catch (\Exception $e) {
                         \Log::error('Failed to send OrderAssigned notification', [
                             'user_id' => $assignedUser->id,
@@ -525,13 +494,6 @@ class OrderController extends Controller
             $assignedUser = $assignment->user;
             if ($assignedUser && $assignedUser->id !== $request->user()->id) {
                 try {
-                    \Log::info('Attempting to send stage change notification', [
-                        'user_id' => $assignedUser->id,
-                        'order_id' => $order->id,
-                        'stage' => $order->stage->name,
-                        'role_type' => $assignment->role_type
-                    ]);
-
                     $notification = new \App\Notifications\OrderStageChanged(
                         $order,
                         $oldStage,
@@ -541,13 +503,6 @@ class OrderController extends Controller
                     );
 
                     $assignedUser->notify($notification);
-
-                    \Log::info('Stage change notification sent to assigned user', [
-                        'user_id' => $assignedUser->id,
-                        'order_id' => $order->id,
-                        'stage' => $order->stage->name,
-                        'role_type' => $assignment->role_type
-                    ]);
                 } catch (\Exception $e) {
                     \Log::error('Failed to send stage change notification to assigned user', [
                         'user_id' => $assignedUser->id,
@@ -587,34 +542,13 @@ class OrderController extends Controller
     {
         $user = request()->user();
 
-        \Log::info('OrderController@statusLogs - User access check', [
-            'user_id' => $user->id,
-            'user_roles' => $user->roles->pluck('name')->toArray(),
-            'order_id' => $order->id,
-            'user_has_elevated_permissions' => $user->hasElevatedPermissions(),
-            'user_is_staff' => $user->isStaff()
-        ]);
+        // Убрано подробное отладочное логирование проверки доступа
 
         if (Gate::denies('view', $order)) {
-            \Log::warning('OrderController@statusLogs - Access denied', [
-                'user_id' => $user->id,
-                'order_id' => $order->id
-            ]);
             abort(403, 'Доступ запрещён');
         }
 
-        \Log::info('OrderController@statusLogs - Access granted, loading logs', [
-            'user_id' => $user->id,
-            'order_id' => $order->id
-        ]);
-
         $logs = $order->statusLogs()->with('user')->orderBy('changed_at', 'desc')->get();
-
-        \Log::info('OrderController@statusLogs - Logs loaded successfully', [
-            'user_id' => $user->id,
-            'order_id' => $order->id,
-            'logs_count' => $logs->count()
-        ]);
 
         return response()->json($logs);
     }

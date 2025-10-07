@@ -29,26 +29,15 @@ class OrderRepository
             // Если есть флаг admin_view и пользователь админ/менеджер - показываем ВСЕ заказы
             if ($request->has('admin_view') && $user->hasAnyRole(['admin', 'manager'])) {
                 // Не применяем никаких фильтров для админов с флагом admin_view
-                \Log::info('Admin view requested', [
-                    'user_id' => $user->id,
-                    'user_roles' => $user->roles->pluck('name')->toArray(),
-                    'admin_view' => true
-                ]);
             } elseif (!$user->hasAnyRole(['admin', 'manager'])) {
                 $assignedOrderIds = OrderAssignment::query()
                     ->where('user_id', $user->id)
                     ->pluck('order_id');
                 $query->whereIn('id', $assignedOrderIds);
 
-                \Log::info('Regular user view', [
-                    'user_id' => $user->id,
-                    'assigned_orders_count' => $assignedOrderIds->count()
-                ]);
+                // Обычный пользователь — показываем только назначенные заказы
             } else {
-                \Log::info('Admin/Manager view without admin_view flag', [
-                    'user_id' => $user->id,
-                    'user_roles' => $user->roles->pluck('name')->toArray()
-                ]);
+                // Админ/менеджер без admin_view — полный доступ
             }
 
             // Фильтры

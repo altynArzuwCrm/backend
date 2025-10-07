@@ -219,10 +219,6 @@ class StageController extends Controller
     public function getAllUsersByStageRoles(Request $request)
     {
         $user = Auth::user();
-        Log::info('StageController::getAllUsersByStageRoles called', [
-            'user_id' => $user ? $user->id : null,
-            'user_roles' => $user ? $user->roles->pluck('name')->toArray() : []
-        ]);
 
         // Временно убираем проверку прав для отладки
         // if (Gate::denies('viewAny', Stage::class)) {
@@ -240,34 +236,7 @@ class StageController extends Controller
                     ->where('is_active', true); // Только активные пользователи
             }])->get();
 
-            // Дополнительная проверка: логируем всех пользователей с ролями
-            $allUsersWithRoles = User::with('roles')->where('is_active', true)->get();
-            Log::info('All active users with roles', [
-                'total_users' => $allUsersWithRoles->count(),
-                'users_with_roles' => $allUsersWithRoles->filter(function ($user) {
-                    return $user->roles->count() > 0;
-                })->map(function ($user) {
-                    return [
-                        'id' => $user->id,
-                        'name' => $user->name,
-                        'roles' => $user->roles->pluck('name')->toArray()
-                    ];
-                })->toArray()
-            ]);
-
-            Log::info('Stages loaded with roles and users', [
-                'stages_count' => $stages->count(),
-                'stages_with_roles' => $stages->map(function ($stage) {
-                    return [
-                        'stage_id' => $stage->id,
-                        'stage_name' => $stage->name,
-                        'roles_count' => $stage->roles->count(),
-                        'users_count' => $stage->roles->sum(function ($role) {
-                            return $role->users->count();
-                        })
-                    ];
-                })->toArray()
-            ]);
+            // Убрано подробное отладочное логирование
 
             $result = [];
             foreach ($stages as $stage) {
@@ -278,10 +247,7 @@ class StageController extends Controller
                 $result[$stage->id] = $users->unique('id')->values();
             }
 
-            Log::info('getAllUsersByStageRoles result', [
-                'result_keys' => array_keys($result),
-                'total_users' => collect($result)->flatten(1)->count()
-            ]);
+            // Убрано отладочное логирование результата
 
             return $result;
         }, [CacheService::TAG_STAGES, CacheService::TAG_USERS, CacheService::TAG_ROLES]);

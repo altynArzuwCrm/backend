@@ -340,14 +340,7 @@ class OrderAssignmentController extends Controller
                 $assignment->user_id = $newUser->id;
                 $assignment->save();
 
-                // Логирование переназначения
-                Log::info('Массовое переназначение', [
-                    'assignment_id' => $assignment->id,
-                    'old_user_id' => $oldUser->id,
-                    'new_user_id' => $newUser->id,
-                    'reason' => $reassignmentData['reason'] ?? 'Не указана',
-                    'reassigned_by' => Auth::user()->id
-                ]);
+                // Переназначение выполнено
 
                 $updatedAssignments[] = $assignment;
             } catch (\Exception $e) {
@@ -412,43 +405,17 @@ class OrderAssignmentController extends Controller
     {
         $user = Auth::user();
 
-        Log::info('OrderAssignmentController@updateStatus called', [
-            'assignment_id' => $assignment->id,
-            'user_id' => $user->id,
-            'user_roles' => $user->roles->pluck('name')->toArray(),
-            'request_status' => $request->status,
-            'current_assignment_status' => $assignment->status,
-            'assignment_user_id' => $assignment->user_id,
-            'is_staff' => $user->isStaff(),
-            'is_admin' => $user->isAdmin(),
-            'is_manager' => $user->isManager()
-        ]);
-
         // Проверяем права через политику
         if (Gate::denies('updateStatus', $assignment)) {
-            Log::warning('OrderAssignmentController@updateStatus - Access denied by Gate', [
-                'assignment_id' => $assignment->id,
-                'user_id' => $user->id,
-                'user_roles' => $user->roles->pluck('name')->toArray(),
-                'assignment_user_id' => $assignment->user_id,
-                'gate_result' => Gate::inspect('updateStatus', $assignment)->message()
-            ]);
+            // Access denied by Gate
 
             // Дополнительная проверка для отладки
             if ($user->isStaff() && $user->id === $assignment->user_id) {
-                Log::error('OrderAssignmentController@updateStatus - Staff user should have access but Gate denied', [
-                    'user_id' => $user->id,
-                    'assignment_user_id' => $assignment->user_id,
-                    'user_roles' => $user->roles->pluck('name')->toArray()
-                ]);
+                // Staff should have access but Gate denied
             }
 
             // Прямая проверка для сотрудников (обход Gate если он не работает)
             if ($user->isStaff() && $user->id === $assignment->user_id) {
-                Log::info('OrderAssignmentController@updateStatus - Bypassing Gate for staff user', [
-                    'user_id' => $user->id,
-                    'assignment_user_id' => $assignment->user_id
-                ]);
                 // Продолжаем выполнение для сотрудника
             } else {
                 return response()->json([
@@ -457,10 +424,6 @@ class OrderAssignmentController extends Controller
             }
         }
 
-        Log::info('OrderAssignmentController@updateStatus - Access granted', [
-            'assignment_id' => $assignment->id,
-            'user_id' => Auth::user()->id
-        ]);
 
         $request->validate([
             'status' => 'required|in:pending,in_progress,cancelled,under_review,approved',
@@ -475,11 +438,7 @@ class OrderAssignmentController extends Controller
         $oldStatus = $assignment->status;
         $assignment->status = $request->status;
 
-        Log::info('OrderAssignmentController@updateStatus - Saving assignment', [
-            'assignment_id' => $assignment->id,
-            'old_status' => $oldStatus,
-            'new_status' => $assignment->status
-        ]);
+        // Сохраняем изменение статуса назначения
 
         $assignment->save();
 
@@ -488,29 +447,13 @@ class OrderAssignmentController extends Controller
         \Illuminate\Support\Facades\Cache::forget($orderCacheKey);
 
         if ($oldStatus !== $assignment->status) {
-            Log::info('Статус назначения изменился', [
-                'assignment_id' => $assignment->id,
-                'old_status' => $oldStatus,
-                'new_status' => $assignment->status
-            ]);
-
             $adminsAndManagers = \App\Models\User::whereHas('roles', function ($q) {
                 $q->whereIn('name', ['admin', 'manager']);
             })->get();
-            Log::info('Найдено админов и менеджеров: ' . $adminsAndManagers->count());
 
             foreach ($adminsAndManagers as $admin) {
-                Log::info('Отправляем уведомление пользователю', [
-                    'user_id' => $admin->id,
-                    'username' => $admin->username,
-                    'role' => $admin->role
-                ]);
                 try {
                     $admin->notify(new \App\Notifications\AssignmentStatusChanged($assignment, Auth::user()));
-                    Log::info('Уведомление отправлено успешно', [
-                        'admin_id' => $admin->id,
-                        'assignment_id' => $assignment->id
-                    ]);
                 } catch (\Exception $e) {
                     Log::error('Ошибка отправки уведомления', [
                         'admin_id' => $admin->id,
@@ -549,11 +492,6 @@ class OrderAssignmentController extends Controller
             }
         }
 
-        Log::info('OrderAssignmentController@updateStatus - Success', [
-            'assignment_id' => $assignment->id,
-            'response' => $response
-        ]);
-
         return response()->json($response);
     }
 
@@ -583,12 +521,6 @@ class OrderAssignmentController extends Controller
         if ($assignment->status == 'cancelled') {
             $assignedUser = $assignment->user;
             if ($assignedUser) {
-                Log::info('Отправляем уведомление об удалении назначения', [
-                    'user_id' => $assignedUser->id,
-                    'username' => $assignedUser->username,
-                    'assignment_id' => $assignment->id,
-                    'order_id' => $assignment->order_id
-                ]);
                 $assignedUser->notify(new \App\Notifications\AssignmentRemoved($assignment, Auth::user()));
             }
 

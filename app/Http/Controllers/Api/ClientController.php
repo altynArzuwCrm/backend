@@ -208,29 +208,15 @@ class ClientController extends Controller
         $client = Client::find($id);
 
         if (!$client) {
-            Log::warning('Client not found for deletion', [
-                'client_id' => $id,
-                'user_id' => auth()->id()
-            ]);
             return response()->json([
                 'message' => 'Клиент не найден',
                 'error_code' => 'CLIENT_NOT_FOUND'
             ], 404);
         }
 
-        Log::info('ClientController::destroy called', [
-            'client_id' => $client->id,
-            'client_name' => $client->name,
-            'user_id' => auth()->id(),
-            'user_roles' => auth()->user()->roles->pluck('name')->toArray(),
-            'can_delete' => Gate::allows('delete', $client)
-        ]);
+        // Убрано подробное отладочное логирование удаления клиента
 
         if (Gate::denies('delete', $client)) {
-            Log::warning('Access denied for client deletion', [
-                'client_id' => $client->id,
-                'user_id' => auth()->id()
-            ]);
             abort(403, 'Доступ запрещён');
         }
 
@@ -239,27 +225,18 @@ class ClientController extends Controller
         $activeOrdersCount = $client->orders()->where('is_archived', false)->count();
 
         if ($activeOrdersCount > 0) {
-            Log::warning('Cannot delete client with active orders', [
-                'client_id' => $client->id,
-                'active_orders_count' => $activeOrdersCount
-            ]);
             return response()->json([
                 'message' => "Невозможно удалить клиента, у которого есть {$activeOrdersCount} активных заказов"
             ], 422);
         }
 
-        Log::info('Deleting client', [
-            'client_id' => $client->id,
-            'client_name' => $client->name
-        ]);
+        // Удаление клиента
 
         $client->delete();
 
         CacheService::invalidateClientCaches($client->id);
 
-        Log::info('Client deleted successfully', [
-            'client_id' => $client->id
-        ]);
+        // Клиент удалён успешно
 
         return response()->json(['message' => 'Клиент удалён']);
     }
