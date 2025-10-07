@@ -109,13 +109,9 @@ class OrderAssignmentController extends Controller
             $orderCacheKey = 'order_' . $order->id;
             \Illuminate\Support\Facades\Cache::forget($orderCacheKey);
 
-            // Автоназначение на стадии по продукту
-            $product = $order->product;
-            if ($product) {
-                $productStages = $product->getAvailableStages();
-                foreach ($productStages as $stage) {
-                    $assignment->assignToStage($stage->name);
-                }
+            // Назначаем на текущую стадию заказа
+            if ($order->stage) {
+                $assignment->assignToStage($order->stage->name);
             }
 
             // Отправляем уведомление

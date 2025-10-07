@@ -62,9 +62,13 @@ class OrderAssignment extends Model
         return $this->assignedStages()->where('name', $stageName)->exists();
     }
 
-    public function assignToStage($stageName)
+    public function assignToStage($stageIdentifier)
     {
-        $stage = Stage::where('name', $stageName)->first();
+        // Поддержка и ID и name для совместимости
+        $stage = is_numeric($stageIdentifier)
+            ? Stage::find($stageIdentifier)
+            : Stage::where('name', $stageIdentifier)->first();
+            
         if ($stage) {
             OrderStageAssignment::updateOrCreate([
                 'order_assignment_id' => $this->id,
