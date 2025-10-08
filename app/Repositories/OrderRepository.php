@@ -23,7 +23,23 @@ class OrderRepository
 
         // Кэшируем результат на 15 минут (или обновляем принудительно)
         return Cache::remember($cacheKey, $cacheTime, function () use ($request, $user) {
-            $query = Order::with(['project', 'product', 'client', 'stage']);
+            // Оптимизация: выбираем только необходимые поля для уменьшения размера данных
+            $query = Order::select('id', 'client_id', 'project_id', 'product_id', 'stage_id', 
+                                   'quantity', 'deadline', 'price', 'is_archived', 'created_at', 'updated_at')
+                ->with([
+                    'project' => function ($q) {
+                        $q->select('id', 'title');
+                    },
+                    'product' => function ($q) {
+                        $q->select('id', 'name');
+                    },
+                    'client' => function ($q) {
+                        $q->select('id', 'name', 'company_name');
+                    },
+                    'stage' => function ($q) {
+                        $q->select('id', 'name', 'display_name', 'color');
+                    }
+                ]);
 
             // Фильтрация по правам доступа
             // Если есть флаг admin_view и пользователь админ/менеджер - показываем ВСЕ заказы
@@ -49,14 +65,21 @@ class OrderRepository
                 $query->where('client_id', $request->client_id);
             }
 
+            // Определяем, нужно ли применять фильтр по архиву
+            $shouldApplyArchiveFilter = true;
             if ($request->filled('stage')) {
                 $stage = \App\Models\Stage::where('name', $request->stage)->first();
                 if ($stage) {
                     $query->where('stage_id', $stage->id);
+                    
+                    // Для завершенных и отмененных заказов не применяем фильтр is_archived
+                    if (in_array($stage->name, ['completed', 'cancelled'])) {
+                        $shouldApplyArchiveFilter = false;
+                    }
                 }
             }
 
-            if ($request->filled('is_archived')) {
+            if ($request->filled('is_archived') && $shouldApplyArchiveFilter) {
                 $isArchived = $request->boolean('is_archived');
                 $query->where('is_archived', $isArchived);
             }

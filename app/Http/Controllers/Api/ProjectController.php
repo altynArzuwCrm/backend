@@ -22,7 +22,9 @@ class ProjectController extends Controller
 
         $user = $request->user();
 
-        $query = Project::with(['orders']);
+        // Оптимизация: выбираем только необходимые поля для уменьшения размера данных
+        $query = Project::select('id', 'title', 'deadline', 'total_price', 'payment_amount', 'created_at')
+            ->withCount('orders'); // Используем withCount вместо загрузки всех заказов
 
         $sortBy = $request->get('sort_by', 'id');
         $sortOrder = $request->get('sort_order', 'asc');
@@ -121,6 +123,15 @@ class ProjectController extends Controller
 
 
 
+            // Предзагружаем всех пользователей для избежания N+1
+            $allUserIds = collect($request->orders)
+                ->flatMap(function ($orderData) {
+                    return isset($orderData['assignments']) ? collect($orderData['assignments'])->pluck('user_id') : [];
+                })
+                ->unique()
+                ->values();
+            $usersById = \App\Models\User::whereIn('id', $allUserIds)->get()->keyBy('id');
+
             $orders = [];
             foreach ($request->orders as $orderData) {
                 $order = Order::create([
@@ -144,7 +155,7 @@ class ProjectController extends Controller
                         ]);
 
                         // Отправляем уведомление о назначении
-                        $user = \App\Models\User::find($assignmentData['user_id']);
+                        $user = $usersById->get($assignmentData['user_id']);
                         if ($user) {
                             $user->notify(new \App\Notifications\OrderAssigned($order, auth()->user()));
                         }
@@ -181,7 +192,10 @@ class ProjectController extends Controller
         }
 
         $projects = CacheService::rememberWithTags('all_projects', 1800, function () {
-            return Project::orderBy('id')->get();
+            // Оптимизация: выбираем только необходимые поля для уменьшения размера данных
+            return Project::select('id', 'title', 'deadline', 'created_at')
+                ->orderBy('id')
+                ->get();
         }, [CacheService::TAG_PROJECTS]);
         return $projects;
     }

@@ -19,7 +19,11 @@ class ClientController extends Controller
         }
 
         $user = $request->user();
-        $query = Client::with('contacts');
+        // Оптимизация: выбираем только необходимые поля
+        $query = Client::select('id', 'name', 'company_name', 'created_at')
+            ->with(['contacts' => function ($q) {
+                $q->select('id', 'client_id', 'type', 'value');
+            }]);
 
         if (!$user->hasAnyRole(['admin', 'manager'])) {
             $assignedClientIds = \App\Models\OrderAssignment::query()
@@ -72,7 +76,11 @@ class ClientController extends Controller
         $user = request()->user();
         $cacheKey = 'clients_for_user_' . $user->id . '_roles_' . $user->roles->pluck('name')->implode('-');
         $clients = CacheService::rememberWithTags($cacheKey, 1800, function () use ($user) {
-            $query = Client::with('contacts');
+            // Оптимизация: выбираем только необходимые поля для уменьшения размера данных
+            $query = Client::select('id', 'name', 'company_name', 'created_at')
+                ->with(['contacts' => function ($q) {
+                    $q->select('id', 'client_id', 'type', 'value');
+                }]);
             if (!$user->hasAnyRole(['admin', 'manager'])) {
                 $assignedClientIds = \App\Models\OrderAssignment::query()
                     ->where('user_id', $user->id)

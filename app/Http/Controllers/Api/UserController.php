@@ -32,7 +32,11 @@ class UserController extends Controller
 
         $cacheKey = 'users_' . md5($request->fullUrl());
         $result = CacheService::rememberWithTags($cacheKey, 900, function () use ($request) {
-            $query = User::with('roles');
+            // Оптимизация: выбираем только необходимые поля
+            $query = User::select('id', 'name', 'username', 'phone', 'image', 'is_active', 'created_at', 'updated_at')
+                ->with(['roles' => function ($q) {
+                    $q->select('roles.id', 'name', 'display_name');
+                }]);
 
             if ($request->has('search') && $request->search) {
                 $search = $request->search;
@@ -401,7 +405,12 @@ class UserController extends Controller
         if (!$currentUser || !$currentUser->isAdminOrManager()) {
             abort(403, 'Доступ запрещён. Только администраторы и менеджеры могут получать всех пользователей.');
         }
-        $users = User::with('roles')->get();
+        // Оптимизация: выбираем только необходимые поля
+        $users = User::select('id', 'name', 'username', 'phone', 'image', 'is_active')
+            ->with(['roles' => function ($q) {
+                $q->select('roles.id', 'name', 'display_name');
+            }])
+            ->get();
         return UserResource::collection($users);
     }
 

@@ -106,6 +106,14 @@ class OrderController extends Controller
             // Получаем все стадии в правильном порядке
             $orderedStages = $availableStages->sortBy('order');
 
+            // Предзагружаем все стадии по ID для избежания N+1
+            $assignmentStageIds = collect($data['assignments'])
+                ->pluck('stage_id')
+                ->filter()
+                ->unique()
+                ->values();
+            $assignmentStagesById = \App\Models\Stage::whereIn('id', $assignmentStageIds)->get()->keyBy('id');
+
             // Ищем первую стадию с назначениями
             foreach ($orderedStages as $stage) {
                 // Пропускаем служебные стадии
@@ -117,7 +125,7 @@ class OrderController extends Controller
                 $hasAssignmentsForStage = false;
                 foreach ($data['assignments'] as $assignment) {
                     if (isset($assignment['stage_id'])) {
-                        $assignmentStage = \App\Models\Stage::find($assignment['stage_id']);
+                        $assignmentStage = $assignmentStagesById->get($assignment['stage_id']);
                         if ($assignmentStage && $assignmentStage->name === $stage->name) {
                             $hasAssignmentsForStage = true;
                             break;
@@ -207,6 +215,13 @@ class OrderController extends Controller
             // Получаем список выбранных стадий
             $selectedStages = isset($data['stages']) ? $data['stages'] : [];
 
+            // Предзагружаем пользователей и стадии для избежания N+1
+            $userIds = collect($data['assignments'])->pluck('user_id')->unique()->values();
+            $stageIds = collect($data['assignments'])->pluck('stage_id')->filter()->unique()->values();
+            
+            $usersById = \App\Models\User::whereIn('id', $userIds)->get()->keyBy('id');
+            $stagesById = \App\Models\Stage::whereIn('id', $stageIds)->get()->keyBy('id');
+
             foreach ($data['assignments'] as $assignmentData) {
                 // Проверяем, что назначение создается только для выбранных стадий
                 if (isset($assignmentData['stage_id']) && !empty($selectedStages)) {
@@ -226,14 +241,14 @@ class OrderController extends Controller
 
                 // Если указан stage_id, назначаем на конкретную стадию
                 if (isset($assignmentData['stage_id'])) {
-                    $stage = \App\Models\Stage::find($assignmentData['stage_id']);
+                    $stage = $stagesById->get($assignmentData['stage_id']);
                     if ($stage) {
                         $assignment->assignToStage($stage->name);
                     }
                 }
 
                 // Отправляем уведомление назначенному пользователю
-                $assignedUser = \App\Models\User::find($assignmentData['user_id']);
+                $assignedUser = $usersById->get($assignmentData['user_id']);
                 if ($assignedUser) {
                     try {
                         $assignedUser->notify(new \App\Notifications\OrderAssigned(
@@ -350,6 +365,13 @@ class OrderController extends Controller
             // Получаем список выбранных стадий
             $selectedStages = isset($data['stages']) ? $data['stages'] : [];
 
+            // Предзагружаем пользователей и стадии для избежания N+1
+            $userIds = collect($data['assignments'])->pluck('user_id')->unique()->values();
+            $stageIds = collect($data['assignments'])->pluck('stage_id')->filter()->unique()->values();
+            
+            $usersById = \App\Models\User::whereIn('id', $userIds)->get()->keyBy('id');
+            $stagesById = \App\Models\Stage::whereIn('id', $stageIds)->get()->keyBy('id');
+
             // Создаем новые назначения
             foreach ($data['assignments'] as $assignmentData) {
                 // Проверяем, что назначение создается только для выбранных стадий
@@ -370,14 +392,14 @@ class OrderController extends Controller
 
                 // Если указан stage_id, назначаем на конкретную стадию
                 if (isset($assignmentData['stage_id'])) {
-                    $stage = \App\Models\Stage::find($assignmentData['stage_id']);
+                    $stage = $stagesById->get($assignmentData['stage_id']);
                     if ($stage) {
                         $assignment->assignToStage($stage->name);
                     }
                 }
 
                 // Отправляем уведомление назначенному пользователю
-                $assignedUser = \App\Models\User::find($assignmentData['user_id']);
+                $assignedUser = $usersById->get($assignmentData['user_id']);
                 if ($assignedUser) {
                     try {
                         $assignedUser->notify(new \App\Notifications\OrderAssigned(
