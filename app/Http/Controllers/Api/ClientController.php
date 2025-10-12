@@ -134,6 +134,9 @@ class ClientController extends Controller
             }
         }
 
+        // Инвалидируем кеш после создания клиента
+        CacheService::invalidateClientCaches($client->id);
+
         // Используем with() вместо load() для предотвращения N+1 проблемы
         $client = Client::with('contacts')->find($client->id);
         return response()->json(['data' => $client], 201);
@@ -174,6 +177,9 @@ class ClientController extends Controller
                 }
             }
         }
+
+        // Инвалидируем кеш после обновления клиента
+        CacheService::invalidateClientCaches($client->id);
 
         // Используем with() вместо load() для предотвращения N+1 проблемы
         $client = Client::with('contacts')->find($client->id);
