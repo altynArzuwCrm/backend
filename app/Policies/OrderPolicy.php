@@ -30,32 +30,19 @@ class OrderPolicy
      */
     public function view(User $user, Order $order): bool
     {
-        Log::info('OrderPolicy@view', [
-            'user_id' => $user->id,
-            'user_roles' => $user->roles->pluck('name')->toArray(),
-            'is_staff' => $user->isStaff(),
-            'has_elevated_permissions' => $user->hasElevatedPermissions(),
-            'order_id' => $order->id
-        ]);
+        // Убрано подробное отладочное логирование политики доступа
 
         // Админы, менеджеры и power_user видят все заказы
         if ($user->hasElevatedPermissions()) {
-            Log::info('User has elevated permissions - access granted');
             return true;
         }
 
         // Сотрудники видят только заказы, где они назначены
         if ($user->isStaff()) {
             $hasAssignment = $order->assignments()->where('user_id', $user->id)->exists();
-            Log::info('User is staff - checking assignment', [
-                'user_id' => $user->id,
-                'order_id' => $order->id,
-                'has_assignment' => $hasAssignment
-            ]);
             return $hasAssignment;
         }
 
-        Log::warning('User access denied - no permissions');
         return false;
     }
 

@@ -80,7 +80,6 @@ class CacheService
     public static function invalidate(string $key): void
     {
         Cache::forget($key);
-        Log::info("Cache invalidated: {$key}");
     }
 
     /**
@@ -194,7 +193,6 @@ class CacheService
         }
 
         Cache::forget($trackingKey);
-        Log::info("Cleared {$tag} cache keys", ['count' => count($keys)]);
     }
 
     /**
@@ -214,7 +212,6 @@ class CacheService
         ];
 
         self::invalidateByTags($tags);
-        Log::info('All application caches cleared');
     }
 
     /**
@@ -253,7 +250,7 @@ class CacheService
         }
         Cache::forget('cache_keys_' . self::TAG_USERS);
 
-        Log::info('Users by stage roles cache invalidated');
+        // Пользовательские кэши очищены
     }
 
     /**

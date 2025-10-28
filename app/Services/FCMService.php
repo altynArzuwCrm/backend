@@ -47,7 +47,6 @@ class FCMService
     public function sendToUser($fcmToken, $title, $body, $data = [])
     {
         if (!$fcmToken || !$this->accessToken) {
-            Log::warning('FCM: Missing token or access token');
             return false;
         }
 
@@ -104,7 +103,6 @@ class FCMService
     public function sendToMultipleUsers($fcmTokens, $title, $body, $data = [])
     {
         if (empty($fcmTokens) || !$this->accessToken) {
-            Log::warning('FCM: Missing tokens or access token');
             return false;
         }
 
@@ -133,7 +131,6 @@ class FCMService
             ->toArray();
 
         if (empty($fcmTokens)) {
-            Log::info('FCM: No active users with FCM tokens found');
             return false;
         }
 
@@ -154,7 +151,6 @@ class FCMService
             ->toArray();
 
         if (empty($fcmTokens)) {
-            Log::info("FCM: No users with role {$roleName} and FCM tokens found");
             return false;
         }
 
@@ -176,9 +172,7 @@ class FCMService
 
             if ($response->successful()) {
                 $result = $response->json();
-                Log::info('FCM notification sent successfully', [
-                    'name' => $result['name'] ?? 'unknown',
-                ]);
+                // Уведомление FCM успешно отправлено
                 return true;
             } else {
                 Log::error('FCM notification failed', [
