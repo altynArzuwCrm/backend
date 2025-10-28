@@ -15,11 +15,8 @@ use App\Http\Controllers\Api\AuditLogController;
 use App\Http\Controllers\Api\ProductAssignmentController;
 use App\Http\Controllers\Api\RoleController;
 use App\Http\Controllers\Api\CategoryController;
-use App\Http\Controllers\Api\HealthController;
+use App\Http\Controllers\Api\BulkDeleteController;
 use Illuminate\Support\Facades\Route;
-
-// Health check endpoint (no authentication required)
-Route::get('health', [HealthController::class, 'check']);
 
 Route::post('register', [AuthController::class, 'register']);
 Route::post('login', [AuthController::class, 'login'])->name('login');
@@ -40,6 +37,7 @@ Route::middleware(['auth:sanctum', 'handle.null.relations'])->group(function () 
 
     Route::get('orders/{order}/status-logs', [OrderController::class, 'statusLogs']);
     Route::put('orders/{order}/stage', [OrderController::class, 'updateStage']);
+    Route::post('orders/bulk-update-status', [OrderController::class, 'bulkUpdateStatus']);
     Route::get('orders/work-types', [OrderController::class, 'getWorkTypes']);
     Route::apiResource('comments', CommentController::class);
     Route::apiResource('orders', OrderController::class);
@@ -106,6 +104,10 @@ Route::middleware(['auth:sanctum', 'handle.null.relations'])->group(function () 
     Route::apiResource('stages', \App\Http\Controllers\Api\StageController::class);
     Route::post('stages/reorder', [\App\Http\Controllers\Api\StageController::class, 'reorder']);
     Route::get('stages/{stage}/users-by-roles', [\App\Http\Controllers\Api\StageController::class, 'getUsersByStageRoles']);
+
+    // Bulk operations
+    Route::post('bulk-delete/{entity}', [BulkDeleteController::class, 'destroy'])
+        ->where('entity', 'users|clients|products|projects|orders|categories|roles|stages');
 
     // Product-Stage management routes
     Route::get('products/{product}/stages', [\App\Http\Controllers\Api\ProductStageController::class, 'index']);

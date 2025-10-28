@@ -53,25 +53,79 @@ class Order extends Model
         });
 
         static::created(function ($order) {
-            if ($order->project) {
-                $order->project->recalculateTotalPrice();
+            try {
+                if ($order->project) {
+                    $order->project->recalculateTotalPrice();
+                }
+            } catch (\Exception $e) {
+                \Log::error('Error recalculating project price in Order created observer', [
+                    'order_id' => $order->id,
+                    'error' => $e->getMessage()
+                ]);
             }
+            
             // Очищаем кэш заказов при создании нового заказа
-            Cache::flush();
+            try {
+                Cache::flush();
+            } catch (\Exception $e) {
+                \Log::warning('Failed to flush cache', ['error' => $e->getMessage()]);
+            }
         });
         static::updated(function ($order) {
-            if ($order->project) {
-                $order->project->recalculateTotalPrice();
+            try {
+                // Если проект изменился, нужно пересчитать цены обоих проектов
+                if ($order->isDirty('project_id')) {
+                    // Пересчитываем старый проект (если он был)
+                    if ($order->getOriginal('project_id')) {
+                        $oldProject = \App\Models\Project::find($order->getOriginal('project_id'));
+                        if ($oldProject) {
+                            $oldProject->recalculateTotalPrice();
+                        }
+                    }
+                    
+                    // Пересчитываем новый проект (если есть)
+                    if ($order->project_id && $order->project) {
+                        $order->project->recalculateTotalPrice();
+                    }
+                } elseif ($order->project) {
+                    // Если проект не изменился, просто пересчитываем текущий проект
+                    $order->project->recalculateTotalPrice();
+                }
+            } catch (\Exception $e) {
+                // Логируем ошибку, но не прерываем процесс обновления
+                \Log::error('Error recalculating project price in Order observer', [
+                    'order_id' => $order->id,
+                    'error' => $e->getMessage(),
+                    'trace' => $e->getTraceAsString()
+                ]);
             }
+            
             // Очищаем кэш заказов при обновлении заказа
-            Cache::flush();
+            try {
+                Cache::flush();
+            } catch (\Exception $e) {
+                // Игнорируем ошибки очистки кэша
+                \Log::warning('Failed to flush cache', ['error' => $e->getMessage()]);
+            }
         });
         static::deleted(function ($order) {
-            if ($order->project) {
-                $order->project->recalculateTotalPrice();
+            try {
+                if ($order->project) {
+                    $order->project->recalculateTotalPrice();
+                }
+            } catch (\Exception $e) {
+                \Log::error('Error recalculating project price in Order deleted observer', [
+                    'order_id' => $order->id ?? 'unknown',
+                    'error' => $e->getMessage()
+                ]);
             }
+            
             // Очищаем кэш заказов при удалении заказа
-            Cache::flush();
+            try {
+                Cache::flush();
+            } catch (\Exception $e) {
+                \Log::warning('Failed to flush cache', ['error' => $e->getMessage()]);
+            }
         });
     }
 

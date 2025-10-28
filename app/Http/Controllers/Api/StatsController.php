@@ -203,7 +203,7 @@ class StatsController extends Controller
             ->groupBy('user_id')
             ->get()
             ->map(function ($row) {
-                $user = \App\Models\User::find($row->user_id);
+                $user = \App\Models\User::with('roles')->find($row->user_id);
                 $orders = \App\Models\OrderAssignment::where('user_id', $row->user_id)
                     ->whereNull('deleted_at') // Исключаем удаленные назначения
                     ->with(['order.product', 'order.stage'])
@@ -221,6 +221,12 @@ class StatsController extends Controller
                     'user_name' => $user?->name,
                     'total' => $row->total,
                     'orders' => $orders,
+                    'roles' => $user?->roles?->map(function($role) {
+                        return [
+                            'name' => $role->name,
+                            'display_name' => $role->display_name,
+                        ];
+                    }),
                 ];
             })
             ->filter(function ($userData) {

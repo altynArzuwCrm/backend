@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Order;
 use App\Models\OrderAssignment;
 use App\Models\OrderStatusLog;
+use App\Models\Stage;
 use App\Repositories\OrderRepository;
 use App\DTOs\OrderDTO;
 use App\Services\CacheService;
@@ -292,10 +293,39 @@ class OrderController extends Controller
             abort(403, 'Доступ запрещён');
         }
 
+        // Специальная обработка для project_id: null
+        // Если project_id явно установлен в null, обрабатываем это отдельно
+        $projectIdValue = $request->input('project_id');
+        if ($request->has('project_id') && ($projectIdValue === null || $projectIdValue === '' || $projectIdValue === 'null')) {
+            // Запоминаем старый проект для пересчета цены
+            $oldProjectId = $order->project_id;
+            
+            $order->project_id = null;
+            $order->save();
+            
+            // Пересчитываем цену старого проекта (если был)
+            if ($oldProjectId) {
+                $oldProject = \App\Models\Project::find($oldProjectId);
+                if ($oldProject) {
+                    $oldProject->recalculateTotalPrice();
+                }
+            }
+            
+            // Очищаем кэш заказов после обновления
+            $this->clearOrdersCache();
+            
+            // Загружаем заказ с отношениями
+            $order->refresh();
+            $order->load('assignments.user');
+            
+            return response()->json($order);
+        }
+
         $data = $request->validate([
             'quantity' => ['sometimes', 'integer', 'min:1'],
             'deadline' => ['nullable', 'date'],
             'price' => 'nullable|numeric|min:0',
+            'project_id' => ['nullable', 'integer', 'exists:projects,id'],
             'project_title' => 'nullable|string|max:255',
             'stage' => 'sometimes|string',
             'reason' => 'sometimes|string',
@@ -666,6 +696,129 @@ class OrderController extends Controller
         }
 
         return !empty($assignedUsers);
+    }
+
+    /**
+     * Массовое обновление статуса заказов
+     */
+    public function bulkUpdateStatus(Request $request)
+    {
+        $data = $request->validate([
+            'ids' => 'required|array|min:1',
+            'ids.*' => 'required|integer',
+            'stage' => 'required|string',
+            'reason' => 'sometimes|nullable|string',
+            'reason_status' => 'sometimes|nullable|string',
+        ]);
+
+        $orderIds = $data['ids'];
+        $newStageName = $data['stage'];
+        $reason = $data['reason'] ?? null;
+        $reasonStatus = $data['reason_status'] ?? null;
+
+        // Проверяем существование стадии
+        $stage = Stage::where('name', $newStageName)->first();
+        if (!$stage) {
+            return response()->json([
+                'message' => 'Стадия не найдена'
+            ], 422);
+        }
+
+        $updated = 0;
+        $errors = [];
+        $user = $request->user();
+
+        foreach ($orderIds as $orderId) {
+            try {
+                $order = Order::find($orderId);
+                
+                if (!$order) {
+                    $errors[] = "Заказ ID $orderId не найден";
+                    continue;
+                }
+
+                // Проверка прав
+                if (Gate::denies('changeOrderStatus', $order)) {
+                    $errors[] = "Заказ ID $orderId: нет прав для смены статуса";
+                    continue;
+                }
+
+                // Для completed проверяем неодобренные назначения
+                if ($newStageName === 'completed') {
+                    $pendingAssignments = $order->assignments()
+                        ->where('status', '!=', 'approved')
+                        ->get();
+
+                    if ($pendingAssignments->isNotEmpty()) {
+                        $errors[] = "Заказ ID $orderId: нельзя завершить, пока есть неодобренные назначения";
+                        continue;
+                    }
+                }
+
+                DB::transaction(function () use ($order, $newStageName, $stage, $reason, $reasonStatus, $user, $orderId, &$updated) {
+                    $oldStage = $order->stage;
+
+                    // Обновляем стадию
+                    if ($newStageName == 'cancelled') {
+                        $order->reason = $reason ?? 'Изменено через массовое обновление';
+                        $order->reason_status = $reasonStatus ?? 'refused';
+                    } else {
+                        $order->reason = null;
+                        $order->reason_status = null;
+                    }
+
+                    if ($newStageName === 'completed' || $newStageName === 'cancelled') {
+                        $order->is_archived = true;
+                        $order->archived_at = now();
+                    } else {
+                        $order->is_archived = false;
+                        $order->archived_at = null;
+                    }
+
+                    $order->stage_id = $stage->id;
+                    $order->save();
+
+                    // Создаем запись в логе изменений статуса
+                    OrderStatusLog::create([
+                        'order_id' => $order->id,
+                        'from_status' => $oldStage ? $oldStage->name : null,
+                        'to_status' => $newStageName,
+                        'user_id' => $user->id,
+                        'changed_at' => now(),
+                    ]);
+
+                    $updated++;
+
+                    Log::info("Bulk status update: Order $orderId updated to $newStageName", [
+                        'order_id' => $orderId,
+                        'stage' => $newStageName,
+                        'user_id' => $user->id
+                    ]);
+                });
+
+            } catch (\Exception $e) {
+                $errors[] = "Заказ ID $orderId: {$e->getMessage()}";
+                Log::error("Bulk status update error for Order $orderId", [
+                    'error' => $e->getMessage(),
+                    'trace' => $e->getTraceAsString()
+                ]);
+            }
+        }
+
+        // Очищаем кэш заказов
+        $this->clearOrdersCache();
+
+        $response = [
+            'message' => "Обновлено заказов: $updated",
+            'updated' => $updated,
+            'total_requested' => count($orderIds)
+        ];
+
+        if (!empty($errors)) {
+            $response['errors'] = $errors;
+        }
+
+        return response()->json($response, $updated > 0 ? 200 : 422);
     }
 
     /**
