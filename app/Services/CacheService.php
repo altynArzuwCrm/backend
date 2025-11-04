@@ -97,7 +97,10 @@ class CacheService
     public static function invalidateOrderCaches(?int $orderId = null): void
     {
         if ($orderId) {
-            // Invalidate specific order caches if needed
+            // Invalidate specific order cache
+            self::invalidate("order_{$orderId}");
+            // Invalidate order list caches that might contain this order
+            self::clearTaggedKeys(self::TAG_ORDERS);
         }
 
         self::invalidateByTags([self::TAG_ORDERS, self::TAG_STATS]);

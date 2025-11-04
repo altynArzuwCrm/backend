@@ -39,21 +39,25 @@ class ProjectController extends Controller
             $query->where(function ($q) use ($search) {
                 $q->where('title', 'like', '%' . $search . '%')
                     ->orWhere('id', 'like', '%' . $search . '%')
-                    ->orWhereHas('orders.client', function ($clientQuery) use ($search) {
-                        $clientQuery->where('name', 'like', '%' . $search . '%');
+                    ->orWhereExists(function ($subquery) use ($search) {
+                        $subquery->select(\Illuminate\Support\Facades\DB::raw(1))
+                            ->from('orders')
+                            ->join('clients', 'orders.client_id', '=', 'clients.id')
+                            ->whereColumn('orders.project_id', 'projects.id')
+                            ->where('clients.name', 'like', '%' . $search . '%');
                     });
             });
         }
 
         if (!$user->hasAnyRole(['admin', 'manager'])) {
-            $assignedOrderIds = OrderAssignment::query()
-                ->where('user_id', $user->id)
-                ->pluck('order_id');
-
-            $projectIds = Order::whereIn('id', $assignedOrderIds)
-                ->pluck('project_id');
-
-            $query->whereIn('id', $projectIds);
+            // Оптимизация: используем whereExists вместо pluck + whereIn
+            $query->whereExists(function ($subquery) use ($user) {
+                $subquery->select(\Illuminate\Support\Facades\DB::raw(1))
+                    ->from('order_assignments')
+                    ->join('orders', 'order_assignments.order_id', '=', 'orders.id')
+                    ->whereColumn('orders.project_id', 'projects.id')
+                    ->where('order_assignments.user_id', $user->id);
+            });
         }
 
         $allowedPerPage = [10, 20, 50, 100, 200, 500];
@@ -80,7 +84,20 @@ class ProjectController extends Controller
                 abort(403, 'Доступ запрещён');
             }
 
-            $project->load(['orders.product', 'orders.client']);
+            // Оптимизация: загружаем только необходимые поля заказов
+            $project = Project::select('id', 'title', 'deadline', 'total_price', 'payment_amount', 'client_id', 'created_at', 'updated_at')
+                ->with([
+                    'orders' => function ($q) {
+                        $q->select('id', 'project_id', 'product_id', 'client_id', 'stage_id', 'quantity', 'deadline', 'price', 'is_archived', 'created_at');
+                    },
+                    'orders.product' => function ($q) {
+                        $q->select('id', 'name');
+                    },
+                    'orders.client' => function ($q) {
+                        $q->select('id', 'name', 'company_name');
+                    }
+                ])
+                ->find($project->id);
 
             return response()->json($project);
         } catch (\Exception $e) {
@@ -165,7 +182,8 @@ class ProjectController extends Controller
                 $orders[] = $order;
             }
 
-            return response()->json($project->load('orders'), 201);
+            $project = Project::with('orders')->find($project->id);
+            return response()->json($project, 201);
         } else {
             $request->validate([
                 'title' => 'required|string|max:255',
@@ -185,16 +203,21 @@ class ProjectController extends Controller
         }
     }
 
-    public function allProjects()
+    public function allProjects(Request $request)
     {
         if (Gate::denies('allProjects', Project::class)) {
             abort(403, 'Доступ запрещён');
         }
 
-        $projects = CacheService::rememberWithTags('all_projects', 1800, function () {
+        // Разрешаем указать лимит через параметр, по умолчанию 500 для селектов
+        $limit = min((int) $request->get('limit', 500), 5000); // Максимум 5000
+        
+        $cacheKey = 'all_projects_limit_' . $limit;
+        $projects = CacheService::rememberWithTags($cacheKey, 1800, function () use ($limit) {
             // Оптимизация: выбираем только необходимые поля для уменьшения размера данных
             return Project::select('id', 'title', 'deadline', 'created_at')
                 ->orderBy('id')
+                ->limit($limit)
                 ->get();
         }, [CacheService::TAG_PROJECTS]);
         return $projects;

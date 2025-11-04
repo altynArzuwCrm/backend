@@ -6,6 +6,9 @@ use App\Models\Client;
 use App\DTOs\ClientDTO;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Http\Request;
+use App\Services\CacheService;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 
 class ClientRepository
 {
@@ -19,8 +22,11 @@ class ClientRepository
             $query->where(function ($q) use ($search) {
                 $q->where('name', 'like', '%' . $search . '%')
                     ->orWhere('company_name', 'like', '%' . $search . '%')
-                    ->orWhereHas('contacts', function ($contactQuery) use ($search) {
-                        $contactQuery->where('value', 'like', '%' . $search . '%');
+                    ->orWhereExists(function ($subquery) use ($search) {
+                        $subquery->select(DB::raw(1))
+                            ->from('client_contacts')
+                            ->whereColumn('client_contacts.client_id', 'clients.id')
+                            ->where('client_contacts.value', 'like', '%' . $search . '%');
                     });
             });
         }
@@ -57,7 +63,11 @@ class ClientRepository
             }
         }
 
-        return ClientDTO::fromModel($client->load('contacts'));
+        // Инвалидируем кэш клиентов
+        CacheService::invalidateClientCaches();
+        
+        $client = Client::with('contacts')->find($client->id);
+        return ClientDTO::fromModel($client);
     }
 
     public function updateClient(Client $client, array $data): ClientDTO
@@ -75,12 +85,22 @@ class ClientRepository
             }
         }
 
-        return ClientDTO::fromModel($client->load('contacts'));
+        // Инвалидируем кэш клиентов
+        CacheService::invalidateClientCaches($client->id);
+        
+        $client = Client::with('contacts')->find($client->id);
+        return ClientDTO::fromModel($client);
     }
 
     public function deleteClient(Client $client): bool
     {
-        return $client->delete();
+        $clientId = $client->id;
+        $result = $client->delete();
+        
+        // Инвалидируем кэш клиентов
+        CacheService::invalidateClientCaches($clientId);
+        
+        return $result;
     }
 
     public function getAllClients(): array

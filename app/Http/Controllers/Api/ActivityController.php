@@ -37,7 +37,19 @@ class ActivityController extends Controller
                 ];
             });
 
-        $recentOrders = Order::with(['project', 'client', 'product'])
+        // Оптимизация: загружаем только необходимые поля
+        $recentOrders = Order::select('id', 'client_id', 'product_id', 'project_id', 'created_at')
+            ->with([
+                'project' => function ($q) {
+                    $q->select('id', 'title');
+                },
+                'client' => function ($q) {
+                    $q->select('id', 'name', 'company_name');
+                },
+                'product' => function ($q) {
+                    $q->select('id', 'name');
+                }
+            ])
             ->orderBy('created_at', 'desc')
             ->limit(5)
             ->get()
@@ -59,7 +71,9 @@ class ActivityController extends Controller
                 ];
             });
 
-        $recentClients = Client::orderBy('created_at', 'desc')
+        // Оптимизация: загружаем только необходимые поля
+        $recentClients = Client::select('id', 'name', 'company_name', 'created_at')
+            ->orderBy('created_at', 'desc')
             ->limit(5)
             ->get()
             ->map(function ($client) {
@@ -74,17 +88,52 @@ class ActivityController extends Controller
                 ];
             });
 
-        $auditEvents = AuditLog::with(['auditable' => function ($query) {
-            if ($query->getModel() instanceof \App\Models\Order) {
-                $query->with(['product', 'client']);
-            } elseif ($query->getModel() instanceof \App\Models\Client) {
-                $query->with('contacts');
-            } elseif ($query->getModel() instanceof \App\Models\ClientContact) {
-                $query->with(['client']);
-            } elseif ($query->getModel() instanceof \App\Models\OrderAssignment) {
-                $query->with(['user', 'order.product', 'order.client']);
-            }
-        }, 'user'])
+        // Оптимизация: загружаем только необходимые поля
+        $auditEvents = AuditLog::select('id', 'user_id', 'auditable_type', 'auditable_id', 'action', 'model_name', 'created_at')
+            ->with([
+                'user' => function ($q) {
+                    $q->select('id', 'name', 'username');
+                },
+                'auditable' => function ($query) {
+                    if ($query->getModel() instanceof \App\Models\Order) {
+                        $query->select('id', 'client_id', 'product_id', 'stage_id')
+                            ->with([
+                                'product' => function ($q) {
+                                    $q->select('id', 'name');
+                                },
+                                'client' => function ($q) {
+                                    $q->select('id', 'name', 'company_name');
+                                }
+                            ]);
+                    } elseif ($query->getModel() instanceof \App\Models\Client) {
+                        $query->select('id', 'name', 'company_name')
+                            ->with(['contacts' => function ($q) {
+                                $q->select('id', 'client_id', 'type', 'value');
+                            }]);
+                    } elseif ($query->getModel() instanceof \App\Models\ClientContact) {
+                        $query->select('id', 'client_id', 'type', 'value')
+                            ->with(['client' => function ($q) {
+                                $q->select('id', 'name', 'company_name');
+                            }]);
+                    } elseif ($query->getModel() instanceof \App\Models\OrderAssignment) {
+                        $query->select('id', 'order_id', 'user_id', 'role_type')
+                            ->with([
+                                'user' => function ($q) {
+                                    $q->select('id', 'name', 'username');
+                                },
+                                'order' => function ($q) {
+                                    $q->select('id', 'product_id', 'client_id');
+                                },
+                                'order.product' => function ($q) {
+                                    $q->select('id', 'name');
+                                },
+                                'order.client' => function ($q) {
+                                    $q->select('id', 'name', 'company_name');
+                                }
+                            ]);
+                    }
+                }
+            ])
             ->orderBy('created_at', 'desc')
             ->limit(10)
             ->get()
@@ -254,8 +303,9 @@ class ActivityController extends Controller
      */
     private function getRoleDisplayName($roleType)
     {
-        // Получаем роль из базы данных
-        $role = \App\Models\Role::where('name', $roleType)->first();
+        // Оптимизация: используем кэшированный поиск роли
+        // Получаем роль из базы данных (роли кэшируются в RoleController)
+        $role = \App\Models\Role::select('id', 'name', 'display_name')->where('name', $roleType)->first();
 
         if ($role && $role->display_name) {
             return $role->display_name;

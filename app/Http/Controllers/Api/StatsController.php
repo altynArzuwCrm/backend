@@ -134,26 +134,44 @@ class StatsController extends Controller
             return response()->json(['message' => 'Ваш аккаунт деактивирован'], 403);
         }
 
-        // Если пользователь сотрудник, показываем только его данные
-        if ($user->isStaff()) {
-            return $this->getEmployeeDashboard($user);
-        }
+        // Кэшируем дашборд на 30 секунд для уменьшения нагрузки
+        $cacheKey = 'dashboard_' . $user->id . '_' . ($user->isStaff() ? 'employee' : 'admin');
+        return CacheService::rememberWithTags($cacheKey, 30, function () use ($user) {
+            // Если пользователь сотрудник, показываем только его данные
+            if ($user->isStaff()) {
+                return $this->getEmployeeDashboard($user);
+            }
 
-        // Для админов и менеджеров показываем полную статистику
-        return $this->getFullDashboard();
+            // Для админов и менеджеров показываем полную статистику
+            return $this->getFullDashboard();
+        }, [CacheService::TAG_STATS]);
     }
 
     private function getEmployeeDashboard($user)
     {
-        // Статистика только для сотрудника
-        $userAssignments = \App\Models\OrderAssignment::where('user_id', $user->id)
-            ->with(['order.product', 'order.stage'])
-            ->get();
+        // Оптимизация: используем один запрос для получения всех статистик
+        $stats = \App\Models\OrderAssignment::where('user_id', $user->id)
+            ->selectRaw('
+                COUNT(*) as total_assignments,
+                SUM(CASE WHEN status = "completed" THEN 1 ELSE 0 END) as completed_assignments,
+                SUM(CASE WHEN status = "pending" THEN 1 ELSE 0 END) as pending_assignments,
+                SUM(CASE WHEN status = "in_progress" THEN 1 ELSE 0 END) as in_progress_assignments
+            ')
+            ->first();
+        
+        $totalAssignments = $stats->total_assignments ?? 0;
+        $completedAssignments = $stats->completed_assignments ?? 0;
+        $pendingAssignments = $stats->pending_assignments ?? 0;
+        $inProgressAssignments = $stats->in_progress_assignments ?? 0;
 
-        $totalAssignments = $userAssignments->count();
-        $completedAssignments = $userAssignments->where('status', 'completed')->count();
-        $pendingAssignments = $userAssignments->where('status', 'pending')->count();
-        $inProgressAssignments = $userAssignments->where('status', 'in_progress')->count();
+        // Загружаем только для recentAssignments (максимум 20 последних)
+        $userAssignments = \App\Models\OrderAssignment::where('user_id', $user->id)
+            ->with(['order' => function ($q) {
+                $q->select('id', 'product_id', 'stage_id', 'deadline');
+            }, 'order.product:id,name', 'order.stage:id,name'])
+            ->orderBy('created_at', 'desc')
+            ->limit(20)
+            ->get();
 
         $recentAssignments = $userAssignments
             ->sortByDesc('created_at')
@@ -171,9 +189,12 @@ class StatsController extends Controller
                 return $assignment['product_name'] !== null;
             });
 
-        $delayedAssignments = $userAssignments
-            ->where('order.deadline', '<', now())
-            ->whereNotIn('status', ['completed', 'cancelled'])
+        // Оптимизация: используем join вместо whereHas
+        $delayedAssignments = DB::table('order_assignments')
+            ->join('orders', 'order_assignments.order_id', '=', 'orders.id')
+            ->where('order_assignments.user_id', $user->id)
+            ->where('orders.deadline', '<', now())
+            ->whereNotIn('order_assignments.status', ['completed', 'cancelled'])
             ->count();
 
         return response()->json([
@@ -191,61 +212,98 @@ class StatsController extends Controller
 
     private function getFullDashboard()
     {
-        $ordersByStage = Order::with('stage')
+        // Оптимизация: используем группировку на уровне БД вместо загрузки всех заказов
+        $ordersByStage = DB::table('orders')
+            ->join('stages', 'orders.stage_id', '=', 'stages.id')
+            ->select('stages.name', DB::raw('count(*) as total'))
+            ->groupBy('stages.name')
             ->get()
-            ->groupBy('stage.name')
-            ->map(function ($orders) {
-                return $orders->count();
-            });
+            ->pluck('total', 'name');
 
-        $ordersByUser = DB::table('order_assignments')->select('user_id', DB::raw('count(*) as total'))
-            ->whereNull('deleted_at') // Исключаем удаленные назначения
+        // Оптимизация: предзагружаем всех пользователей и их назначения одним запросом
+        $ordersByUserData = DB::table('order_assignments')
+            ->select('user_id', DB::raw('count(*) as total'))
+            ->whereNull('deleted_at')
             ->groupBy('user_id')
+            ->get();
+        
+        $userIds = $ordersByUserData->pluck('user_id')->unique();
+        $usersById = \App\Models\User::with('roles')->whereIn('id', $userIds)->get()->keyBy('id');
+        
+        // Оптимизация: загружаем только необходимые поля и ограничиваем количество
+        $allAssignments = \App\Models\OrderAssignment::whereIn('user_id', $userIds)
+            ->whereNull('deleted_at')
+            ->select('id', 'order_id', 'user_id', 'status')
+            ->with([
+                'order' => function ($q) {
+                    $q->select('id', 'product_id', 'stage_id');
+                },
+                'order.product' => function ($q) {
+                    $q->select('id', 'name');
+                },
+                'order.stage' => function ($q) {
+                    $q->select('id', 'name');
+                },
+                'user' => function ($q) {
+                    $q->select('id', 'name', 'username');
+                }
+            ])
+            ->limit(1000) // Ограничиваем для производительности
             ->get()
-            ->map(function ($row) {
-                $user = \App\Models\User::with('roles')->find($row->user_id);
-                $orders = \App\Models\OrderAssignment::where('user_id', $row->user_id)
-                    ->whereNull('deleted_at') // Исключаем удаленные назначения
-                    ->with(['order.product', 'order.stage'])
-                    ->get()
-                    ->map(function ($a) {
-                        return [
-                            'id' => $a->order_id,
-                            'product_name' => $a->order?->product?->name,
-                            'stage' => $a->order?->stage?->name,
-                            'status' => $a->status,
-                        ];
-                    });
-                return [
-                    'user_id' => $row->user_id,
-                    'user_name' => $user?->name,
-                    'total' => $row->total,
-                    'orders' => $orders,
-                    'roles' => $user?->roles?->map(function($role) {
-                        return [
-                            'name' => $role->name,
-                            'display_name' => $role->display_name,
-                        ];
-                    }),
-                ];
-            })
-            ->filter(function ($userData) {
-                // Показываем только сотрудников с активными назначениями
-                return $userData['orders'] && count($userData['orders']) > 0;
-            });
+            ->groupBy('user_id');
 
-        $closedCount = Order::whereHas('stage', function ($query) {
-            $query->where('name', 'completed');
+        $ordersByUser = $ordersByUserData->map(function ($row) use ($usersById, $allAssignments) {
+            $user = $usersById->get($row->user_id);
+            $userAssignments = $allAssignments->get($row->user_id, collect());
+            
+            $orders = $userAssignments->map(function ($a) {
+                return [
+                    'id' => $a->order_id,
+                    'product_name' => $a->order?->product?->name,
+                    'stage' => $a->order?->stage?->name,
+                    'status' => $a->status,
+                ];
+            });
+            
+            return [
+                'user_id' => $row->user_id,
+                'user_name' => $user?->name,
+                'total' => $row->total,
+                'orders' => $orders,
+                'roles' => $user?->roles?->map(function($role) {
+                    return [
+                        'name' => $role->name,
+                        'display_name' => $role->display_name,
+                    ];
+                }),
+            ];
         })
-            ->where('archived_at', '>=', now()->subDays(30))
+        ->filter(function ($userData) {
+            return $userData['orders'] && count($userData['orders']) > 0;
+        });
+
+        // Оптимизация: используем join вместо whereHas
+        $closedCount = DB::table('orders')
+            ->join('stages', 'orders.stage_id', '=', 'stages.id')
+            ->where('stages.name', 'completed')
+            ->where('orders.archived_at', '>=', now()->subDays(30))
             ->count();
 
-        $delayedAssignmentsQuery = \App\Models\OrderAssignment::whereHas('order', function ($query) {
-            $query->where('deadline', '<', now());
-        });
+        // Оптимизация: используем join вместо whereHas
+        $delayedAssignmentsQuery = DB::table('order_assignments')
+            ->join('orders', 'order_assignments.order_id', '=', 'orders.id')
+            ->where('orders.deadline', '<', now())
+            ->whereNull('order_assignments.deleted_at');
+        
         $delayedAssignments = $delayedAssignmentsQuery->count();
 
-        $delayedAssignmentsList = $delayedAssignmentsQuery
+        // Оптимизация: используем прямые запросы вместо whereHas
+        $delayedOrderIds = DB::table('orders')
+            ->where('deadline', '<', now())
+            ->pluck('id');
+            
+        $delayedAssignmentsList = \App\Models\OrderAssignment::whereIn('order_id', $delayedOrderIds)
+            ->whereNull('deleted_at')
             ->with(['user', 'order.stage'])
             ->get()
             ->map(function ($assignment) {
@@ -258,13 +316,16 @@ class StatsController extends Controller
                 ];
             });
 
+        // Оптимизация: используем join вместо whereHas
         $totalOrders = \App\Models\Order::count();
-        $completedOrders = \App\Models\Order::whereHas('stage', function ($query) {
-            $query->where('name', 'completed');
-        })->count();
-        $cancelledOrders = \App\Models\Order::whereHas('stage', function ($query) {
-            $query->where('name', 'cancelled');
-        })->count();
+        $completedOrders = DB::table('orders')
+            ->join('stages', 'orders.stage_id', '=', 'stages.id')
+            ->where('stages.name', 'completed')
+            ->count();
+        $cancelledOrders = DB::table('orders')
+            ->join('stages', 'orders.stage_id', '=', 'stages.id')
+            ->where('stages.name', 'cancelled')
+            ->count();
         $completedPercent = $totalOrders ? round($completedOrders / $totalOrders * 100, 2) : 0;
         $cancelledPercent = $totalOrders ? round($cancelledOrders / $totalOrders * 100, 2) : 0;
 

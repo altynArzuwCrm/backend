@@ -95,11 +95,12 @@ class AuditLogController extends Controller
     {
         $this->authorize('view', $auditLog);
 
-        $auditLog->load(['user', 'auditable' => function ($query) {
+        // Используем with() вместо load() для предотвращения N+1 проблемы
+        $auditLog = AuditLog::with(['user', 'auditable' => function ($query) {
             if ($query->getModel() instanceof \App\Models\Order) {
                 $query->with(['product', 'client']);
             }
-        }]);
+        }])->find($auditLog->id);
 
         return response()->json([
             'success' => true,
@@ -136,12 +137,27 @@ class AuditLogController extends Controller
                 ->limit(10)
                 ->get(),
             'recent_activity' => AuditLogResource::collection(
-                (clone $baseQuery)->with(['user:id,name,username', 'auditable' => function ($query) {
-                    // Загружаем product и client только для заказов
-                    if ($query->getModel() instanceof \App\Models\Order) {
-                        $query->with(['product', 'client']);
-                    }
-                }])
+                (clone $baseQuery)
+                    ->select('id', 'user_id', 'auditable_type', 'auditable_id', 'action', 'model_name', 'created_at')
+                    ->with([
+                        'user' => function ($q) {
+                            $q->select('id', 'name', 'username');
+                        },
+                        'auditable' => function ($query) {
+                            // Загружаем product и client только для заказов
+                            if ($query->getModel() instanceof \App\Models\Order) {
+                                $query->select('id', 'client_id', 'product_id', 'stage_id')
+                                    ->with([
+                                        'product' => function ($q) {
+                                            $q->select('id', 'name');
+                                        },
+                                        'client' => function ($q) {
+                                            $q->select('id', 'name', 'company_name');
+                                        }
+                                    ]);
+                            }
+                        }
+                    ])
                     ->orderBy('created_at', 'desc')
                     ->limit(10)
                     ->get()

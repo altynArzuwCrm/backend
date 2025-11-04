@@ -78,9 +78,11 @@ class ProductAssignmentController extends Controller
         // Очищаем кэш продуктов после создания назначения
         CacheService::invalidateProductCaches();
 
+        // Используем with() вместо load() для предотвращения N+1 проблемы
+        $assignment = ProductAssignment::with('user')->find($assignment->id);
         return response()->json([
             'message' => 'Назначение создано',
-            'assignment' => new ProductAssignmentResource($assignment->load('user'))
+            'assignment' => new ProductAssignmentResource($assignment)
         ], 201);
     }
 
@@ -103,9 +105,11 @@ class ProductAssignmentController extends Controller
         // Очищаем кэш продуктов после обновления назначения
         CacheService::invalidateProductCaches();
 
+        // Используем with() вместо load() для предотвращения N+1 проблемы
+        $assignment = ProductAssignment::with('user')->find($assignment->id);
         return response()->json([
             'message' => 'Назначение обновлено',
-            'assignment' => new ProductAssignmentResource($assignment->load('user'))
+            'assignment' => new ProductAssignmentResource($assignment)
         ]);
     }
 
@@ -196,7 +200,9 @@ class ProductAssignmentController extends Controller
                         'role_type' => $assignmentData['role_type'],
                         'is_active' => $assignmentData['is_active'] ?? true
                     ]);
-                    $createdAssignments[] = $assignment->load('user');
+                    // Используем with() вместо load() для предотвращения N+1 проблемы
+                    $assignment = ProductAssignment::with('user')->find($assignment->id);
+                    $createdAssignments[] = $assignment;
                 } catch (\Exception $e) {
                     $errors[] = $e->getMessage();
                 }
@@ -237,9 +243,15 @@ class ProductAssignmentController extends Controller
             'role_type' => 'required|string|in:' . implode(',', $availableRoles)
         ])['role_type'];
 
-        $users = User::whereHas('roles', function ($q) use ($roleType) {
-            $q->where('name', $roleType);
-        })
+        // Оптимизация: используем whereExists вместо whereHas
+        $users = User::whereExists(function ($subquery) use ($roleType) {
+                $subquery->select(\Illuminate\Support\Facades\DB::raw(1))
+                    ->from('user_roles')
+                    ->join('roles', 'user_roles.role_id', '=', 'roles.id')
+                    ->whereColumn('user_roles.user_id', 'users.id')
+                    ->where('roles.name', $roleType);
+            })
+            ->select('id', 'name', 'username', 'email')
             ->where('is_active', true)
             ->get();
 

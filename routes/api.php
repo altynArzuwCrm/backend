@@ -18,16 +18,23 @@ use App\Http\Controllers\Api\CategoryController;
 use App\Http\Controllers\Api\BulkDeleteController;
 use Illuminate\Support\Facades\Route;
 
-Route::post('register', [AuthController::class, 'register']);
-Route::post('login', [AuthController::class, 'login'])->name('login');
+// Удален endpoint регистрации - регистрация должна выполняться только администраторами
+// Route::post('register', [AuthController::class, 'register']); // УДАЛЕНО: регистрация только через админ-панель
+
+Route::post('login', [AuthController::class, 'login'])
+    ->middleware('throttle:5,1') // Rate limit: 5 попыток в минуту для защиты от брутфорса
+    ->name('login');
 
 
 
-Route::middleware(['auth:sanctum', 'handle.null.relations'])->group(function () {
+Route::middleware(['auth:sanctum', 'handle.null.relations', 'throttle:60,1'])->group(function () {
     Route::post('logout', [AuthController::class, 'logout']);
     Route::get('me', [AuthController::class, 'me']);
     Route::post('user/profile', [UserController::class, 'updateProfile']);
     Route::post('validate-password', [UserController::class, 'validatePassword']);
+
+    // Batch endpoint для объединения нескольких запросов (для медленного интернета)
+    Route::post('batch', [\App\Http\Controllers\Api\BatchController::class, 'batch']);
 
     Route::get('stats', [StatsController::class, 'index']);
     Route::get('stats/dashboard', [\App\Http\Controllers\Api\StatsController::class, 'dashboard']);

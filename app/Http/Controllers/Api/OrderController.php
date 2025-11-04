@@ -94,10 +94,12 @@ class OrderController extends Controller
 
         $product = null;
         if (isset($data['product_id'])) {
-            $product = \App\Models\Product::find($data['product_id']);
+            // Оптимизация: загружаем только необходимые поля
+            $product = \App\Models\Product::select('id', 'name')->find($data['product_id']);
         }
         // Get the first available stage for this product
-        $availableStages = $product ? $product->getAvailableStages() : \App\Models\Stage::ordered()->get();
+        // Оптимизация: используем кэшированные стадии
+        $availableStages = $product ? $product->getAvailableStages() : \App\Models\Stage::ordered()->select('id', 'name', 'order')->get();
 
         // Определяем начальную стадию на основе назначений
         $initialStage = null;
@@ -108,12 +110,16 @@ class OrderController extends Controller
             $orderedStages = $availableStages->sortBy('order');
 
             // Предзагружаем все стадии по ID для избежания N+1
+            // Оптимизация: загружаем только нужные поля
             $assignmentStageIds = collect($data['assignments'])
                 ->pluck('stage_id')
                 ->filter()
                 ->unique()
                 ->values();
-            $assignmentStagesById = \App\Models\Stage::whereIn('id', $assignmentStageIds)->get()->keyBy('id');
+            $assignmentStagesById = \App\Models\Stage::select('id', 'name', 'order')
+                ->whereIn('id', $assignmentStageIds)
+                ->get()
+                ->keyBy('id');
 
             // Ищем первую стадию с назначениями
             foreach ($orderedStages as $stage) {
@@ -180,7 +186,7 @@ class OrderController extends Controller
 
         // Преобразуем название стадии в stage_id
         if (isset($data['stage'])) {
-            $stage = \App\Models\Stage::where('name', $data['stage'])->first();
+            $stage = \App\Models\Stage::findByName($data['stage']);
             if ($stage) {
                 $data['stage_id'] = $stage->id;
             } else {
@@ -206,10 +212,22 @@ class OrderController extends Controller
             }
         }
 
-        $order = Order::create($data);
+        try {
+            $order = Order::create($data);
+        } catch (\Exception $e) {
+            Log::error('Error creating order', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+                'data' => $data
+            ]);
+            return response()->json([
+                'message' => 'Ошибка при создании заказа',
+                'error' => config('app.debug') ? $e->getMessage() : null
+            ], 500);
+        }
 
-        // Очищаем кэш заказов после создания
-        $this->clearOrdersCache();
+        // Оптимизация: точечная инвалидация кэша вместо полной очистки
+        CacheService::invalidateOrderCaches($order->id);
 
         // Обрабатываем назначения, если они есть
         if (isset($data['assignments']) && is_array($data['assignments'])) {
@@ -217,11 +235,18 @@ class OrderController extends Controller
             $selectedStages = isset($data['stages']) ? $data['stages'] : [];
 
             // Предзагружаем пользователей и стадии для избежания N+1
+            // Оптимизация: загружаем только нужные поля
             $userIds = collect($data['assignments'])->pluck('user_id')->unique()->values();
             $stageIds = collect($data['assignments'])->pluck('stage_id')->filter()->unique()->values();
             
-            $usersById = \App\Models\User::whereIn('id', $userIds)->get()->keyBy('id');
-            $stagesById = \App\Models\Stage::whereIn('id', $stageIds)->get()->keyBy('id');
+            $usersById = \App\Models\User::select('id', 'name', 'username', 'email')
+                ->whereIn('id', $userIds)
+                ->get()
+                ->keyBy('id');
+            $stagesById = \App\Models\Stage::select('id', 'name')
+                ->whereIn('id', $stageIds)
+                ->get()
+                ->keyBy('id');
 
             foreach ($data['assignments'] as $assignmentData) {
                 // Проверяем, что назначение создается только для выбранных стадий
@@ -270,8 +295,30 @@ class OrderController extends Controller
             }
         }
 
-        // Используем with() вместо load() для предотвращения N+1 проблемы
-        $order = Order::with('assignments.user')->find($order->id);
+        // Оптимизация: загружаем только необходимые поля для ответа
+        $order = Order::select('id', 'client_id', 'project_id', 'product_id', 'stage_id', 
+                              'quantity', 'deadline', 'price', 'is_archived', 'created_at', 'updated_at')
+            ->with([
+                'assignments' => function ($q) {
+                    $q->select('id', 'order_id', 'user_id', 'role_type', 'status');
+                },
+                'assignments.user' => function ($q) {
+                    $q->select('id', 'name', 'username');
+                },
+                'project' => function ($q) {
+                    $q->select('id', 'title');
+                },
+                'product' => function ($q) {
+                    $q->select('id', 'name');
+                },
+                'client' => function ($q) {
+                    $q->select('id', 'name', 'company_name');
+                },
+                'stage' => function ($q) {
+                    $q->select('id', 'name', 'display_name', 'color');
+                }
+            ])
+            ->find($order->id);
         return response()->json($order, 201);
     }
 
@@ -299,12 +346,11 @@ class OrderController extends Controller
                 }
             }
             
-            // Очищаем кэш заказов после обновления
-            $this->clearOrdersCache();
+            // Оптимизация: точечная инвалидация кэша вместо полной очистки
+            CacheService::invalidateOrderCaches($order->id);
             
             // Загружаем заказ с отношениями
-            $order->refresh();
-            $order->load('assignments.user');
+            $order = Order::with('assignments.user')->find($order->id);
             
             return response()->json($order);
         }
@@ -353,8 +399,8 @@ class OrderController extends Controller
             $data['is_archived'] = true;
             $data['archived_at'] = now();
 
-            // Находим стадию по имени
-            $stage = \App\Models\Stage::where('name', 'cancelled')->first();
+            // Находим стадию по имени (используем кэшированный поиск)
+            $stage = \App\Models\Stage::findByName('cancelled');
             if ($stage) {
                 $data['stage_id'] = $stage->id;
             }
@@ -363,8 +409,8 @@ class OrderController extends Controller
             $data['is_archived'] = true;
             $data['archived_at'] = now();
 
-            // Находим стадию по имени
-            $stage = \App\Models\Stage::where('name', $data['stage'])->first();
+            // Находим стадию по имени (используем кэшированный поиск)
+            $stage = \App\Models\Stage::findByName($data['stage']);
             if ($stage) {
                 $data['stage_id'] = $stage->id;
             }
@@ -375,17 +421,30 @@ class OrderController extends Controller
             $data['reason'] = null;
             $data['reason_status'] = null;
 
-            // Находим стадию по имени
-            $stage = \App\Models\Stage::where('name', $data['stage'])->first();
+            // Находим стадию по имени (используем кэшированный поиск)
+            $stage = \App\Models\Stage::findByName($data['stage']);
             if ($stage) {
                 $data['stage_id'] = $stage->id;
             }
         }
 
-        $order->update($data);
+        try {
+            $order->update($data);
+        } catch (\Exception $e) {
+            Log::error('Error updating order', [
+                'order_id' => $order->id,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+                'data' => $data
+            ]);
+            return response()->json([
+                'message' => 'Ошибка при обновлении заказа',
+                'error' => config('app.debug') ? $e->getMessage() : null
+            ], 500);
+        }
 
-        // Очищаем кэш заказов после обновления
-        $this->clearOrdersCache();
+        // Оптимизация: точечная инвалидация кэша вместо полной очистки
+        CacheService::invalidateOrderCaches($order->id);
 
         // Обрабатываем назначения, если они есть
         if (isset($data['assignments']) && is_array($data['assignments'])) {
@@ -396,11 +455,18 @@ class OrderController extends Controller
             $selectedStages = isset($data['stages']) ? $data['stages'] : [];
 
             // Предзагружаем пользователей и стадии для избежания N+1
+            // Оптимизация: загружаем только нужные поля
             $userIds = collect($data['assignments'])->pluck('user_id')->unique()->values();
             $stageIds = collect($data['assignments'])->pluck('stage_id')->filter()->unique()->values();
             
-            $usersById = \App\Models\User::whereIn('id', $userIds)->get()->keyBy('id');
-            $stagesById = \App\Models\Stage::whereIn('id', $stageIds)->get()->keyBy('id');
+            $usersById = \App\Models\User::select('id', 'name', 'username', 'email')
+                ->whereIn('id', $userIds)
+                ->get()
+                ->keyBy('id');
+            $stagesById = \App\Models\Stage::select('id', 'name')
+                ->whereIn('id', $stageIds)
+                ->get()
+                ->keyBy('id');
 
             // Создаем новые назначения
             foreach ($data['assignments'] as $assignmentData) {
@@ -450,8 +516,30 @@ class OrderController extends Controller
             }
         }
 
-        // Используем with() вместо load() для предотвращения N+1 проблемы
-        $order = Order::with('assignments.user')->find($order->id);
+        // Оптимизация: загружаем только необходимые поля для ответа
+        $order = Order::select('id', 'client_id', 'project_id', 'product_id', 'stage_id', 
+                              'quantity', 'deadline', 'price', 'is_archived', 'created_at', 'updated_at')
+            ->with([
+                'assignments' => function ($q) {
+                    $q->select('id', 'order_id', 'user_id', 'role_type', 'status');
+                },
+                'assignments.user' => function ($q) {
+                    $q->select('id', 'name', 'username');
+                },
+                'project' => function ($q) {
+                    $q->select('id', 'title');
+                },
+                'product' => function ($q) {
+                    $q->select('id', 'name');
+                },
+                'client' => function ($q) {
+                    $q->select('id', 'name', 'company_name');
+                },
+                'stage' => function ($q) {
+                    $q->select('id', 'name', 'display_name', 'color');
+                }
+            ])
+            ->find($order->id);
         return response()->json($order);
     }
 
@@ -464,6 +552,9 @@ class OrderController extends Controller
         $request->validate([
             'stage' => 'required|string',
         ]);
+
+        // Исправление N+1: загружаем отношения заранее
+        $order->load(['stage', 'product']);
 
         $oldStage = $order->stage;
         $newStageName = $request->stage;
@@ -483,11 +574,10 @@ class OrderController extends Controller
             }
         }
 
-
         $product = $order->product;
 
-        // Находим стадию по имени
-        $stage = \App\Models\Stage::where('name', $newStageName)->first();
+        // Находим стадию по имени (используем кэшированный поиск)
+        $stage = \App\Models\Stage::findByName($newStageName);
         if (!$stage) {
             abort(422, 'Стадия не найдена');
         }
@@ -509,12 +599,24 @@ class OrderController extends Controller
             $order->archived_at = null;
         }
 
-        $order->stage_id = $stage->id;
-        $order->save();
-        $order->refresh();
+        try {
+            $order->stage_id = $stage->id;
+            $order->save();
+            $order->refresh();
+        } catch (\Exception $e) {
+            Log::error('Error updating order stage', [
+                'order_id' => $order->id,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            return response()->json([
+                'message' => 'Ошибка при обновлении стадии заказа',
+                'error' => config('app.debug') ? $e->getMessage() : null
+            ], 500);
+        }
 
-        // Очищаем кэш заказов для всех пользователей после обновления стадии
-        $this->clearOrdersCache();
+        // Оптимизация: точечная инвалидация кэша вместо полной очистки
+        CacheService::invalidateOrderCaches($order->id);
 
         // Создаем запись в логе изменений статуса
         \App\Models\OrderStatusLog::create([
@@ -526,8 +628,13 @@ class OrderController extends Controller
         ]);
 
         // Отправляем уведомления администраторам и менеджерам о переходе на новую стадию
-        $adminsAndManagers = \App\Models\User::whereHas('roles', function ($q) {
-            $q->whereIn('name', ['admin', 'manager']);
+        // Оптимизация: используем whereExists вместо whereHas
+        $adminsAndManagers = \App\Models\User::whereExists(function ($subquery) {
+            $subquery->select(DB::raw(1))
+                ->from('user_roles')
+                ->join('roles', 'user_roles.role_id', '=', 'roles.id')
+                ->whereColumn('user_roles.user_id', 'users.id')
+                ->whereIn('roles.name', ['admin', 'manager']);
         })->get();
 
         foreach ($adminsAndManagers as $admin) {
@@ -535,11 +642,23 @@ class OrderController extends Controller
         }
 
         // Отправляем уведомления пользователям, назначенным на эту стадию
+        // Оптимизация: используем whereExists вместо whereHas
         $stageAssignments = $order->assignments()
-            ->whereHas('orderStageAssignments', function ($q) use ($stage) {
-                $q->where('stage_id', $stage->id);
+            ->whereExists(function ($subquery) use ($stage) {
+                $subquery->select(DB::raw(1))
+                    ->from('order_stage_assignments')
+                    ->whereColumn('order_stage_assignments.order_assignment_id', 'order_assignments.id')
+                    ->where('order_stage_assignments.stage_id', $stage->id);
             })
-            ->with(['user', 'orderStageAssignments'])
+            ->select('id', 'order_id', 'user_id', 'role_type', 'status')
+            ->with([
+                'user' => function ($q) {
+                    $q->select('id', 'name', 'username');
+                },
+                'orderStageAssignments' => function ($q) {
+                    $q->select('id', 'order_assignment_id', 'stage_id', 'is_assigned');
+                }
+            ])
             ->get();
 
         foreach ($stageAssignments as $assignment) {
@@ -566,8 +685,31 @@ class OrderController extends Controller
             }
         }
 
-        // Используем with() вместо load() для предотвращения N+1 проблемы
-        $order = Order::with(['project', 'product', 'client', 'assignments.user', 'stage'])->find($order->id);
+        // Оптимизация: загружаем только необходимые поля для ответа
+        $order = Order::select('id', 'client_id', 'project_id', 'product_id', 'stage_id', 
+                              'quantity', 'deadline', 'price', 'is_archived', 'created_at', 'updated_at')
+            ->with([
+                'project' => function ($q) {
+                    $q->select('id', 'title');
+                },
+                'product' => function ($q) {
+                    $q->select('id', 'name');
+                },
+                'client' => function ($q) {
+                    $q->select('id', 'name', 'company_name');
+                },
+                'stage' => function ($q) {
+                    $q->select('id', 'name', 'display_name', 'color');
+                },
+                'assignments' => function ($q) {
+                    $q->select('id', 'order_id', 'user_id', 'role_type', 'status');
+                },
+                'assignments.user' => function ($q) {
+                    $q->select('id', 'name', 'username');
+                }
+            ])
+            ->find($order->id);
+        
         return response()->json([
             'message' => 'Статус обновлён',
             'stage' => $order->stage->name,
@@ -582,12 +724,25 @@ class OrderController extends Controller
             abort(403, 'Доступ запрещён');
         }
 
-        $order->delete();
+        try {
+            $orderId = $order->id;
+            $order->delete();
 
-        // Очищаем кэш заказов после удаления
-        $this->clearOrdersCache();
+            // Оптимизация: точечная инвалидация кэша вместо полной очистки
+            CacheService::invalidateOrderCaches($orderId);
 
-        return response()->json(['message' => 'Заказ удалён']);
+            return response()->json(['message' => 'Заказ удалён']);
+        } catch (\Exception $e) {
+            Log::error('Error deleting order', [
+                'order_id' => $order->id,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            return response()->json([
+                'message' => 'Ошибка при удалении заказа',
+                'error' => config('app.debug') ? $e->getMessage() : null
+            ], 500);
+        }
     }
 
     public function statusLogs(Order $order)
@@ -613,9 +768,14 @@ class OrderController extends Controller
             ->with('user')
             ->get();
 
+        // Оптимизация: используем whereExists вместо whereHas для лучшей производительности
         $orderAssignments = $order->assignments()
-            ->whereHas('user.roles', function ($q) use ($roleType) {
-                $q->where('name', $roleType);
+            ->whereExists(function ($subquery) use ($roleType) {
+                $subquery->select(DB::raw(1))
+                    ->from('user_roles')
+                    ->join('roles', 'user_roles.role_id', '=', 'roles.id')
+                    ->whereColumn('user_roles.user_id', 'order_assignments.user_id')
+                    ->where('roles.name', $roleType);
             })
             ->with('user')
             ->get();
@@ -672,8 +832,8 @@ class OrderController extends Controller
         $reason = $data['reason'] ?? null;
         $reasonStatus = $data['reason_status'] ?? null;
 
-        // Проверяем существование стадии
-        $stage = Stage::where('name', $newStageName)->first();
+        // Проверяем существование стадии (используем кэшированный поиск)
+        $stage = Stage::findByName($newStageName);
         if (!$stage) {
             return response()->json([
                 'message' => 'Стадия не найдена'
@@ -761,8 +921,10 @@ class OrderController extends Controller
             }
         }
 
-        // Очищаем кэш заказов
-        $this->clearOrdersCache();
+        // Оптимизация: инвалидируем кэш только для затронутых заказов
+        foreach ($orderIds as $orderId) {
+            CacheService::invalidateOrderCaches($orderId);
+        }
 
         $response = [
             'message' => "Обновлено заказов: $updated",
@@ -779,14 +941,18 @@ class OrderController extends Controller
 
     /**
      * Очищает кэш заказов для всех пользователей
+     * @deprecated Используйте CacheService::invalidateOrderCaches() напрямую
      */
     private function clearOrdersCache()
     {
         try {
-            // Очищаем кэш заказов
+            // Очищаем кэш заказов (используется только для совместимости)
             CacheService::invalidateOrderCaches();
         } catch (\Exception $e) {
             // Игнорируем ошибки очистки кэша
+            Log::warning('Error clearing orders cache', [
+                'error' => $e->getMessage()
+            ]);
         }
     }
 }

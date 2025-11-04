@@ -142,11 +142,17 @@ class FCMService
      */
     public function sendToUsersByRole($roleName, $title, $body, $data = [])
     {
+        // Оптимизация: используем whereExists вместо whereHas
         $fcmTokens = \App\Models\User::where('is_active', true)
-            ->whereHas('roles', function ($query) use ($roleName) {
-                $query->where('name', $roleName);
+            ->whereExists(function ($subquery) use ($roleName) {
+                $subquery->select(\Illuminate\Support\Facades\DB::raw(1))
+                    ->from('user_roles')
+                    ->join('roles', 'user_roles.role_id', '=', 'roles.id')
+                    ->whereColumn('user_roles.user_id', 'users.id')
+                    ->where('roles.name', $roleName);
             })
             ->whereNotNull('fcm_token')
+            ->select('fcm_token')
             ->pluck('fcm_token')
             ->toArray();
 

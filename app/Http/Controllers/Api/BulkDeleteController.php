@@ -165,11 +165,16 @@ class BulkDeleteController extends Controller
                 break;
 
             case 'roles':
-                $activeAssignmentsCount = $model->users()->whereHas('assignments', function ($query) {
-                    $query->whereHas('order', function ($orderQuery) {
-                        $orderQuery->where('is_archived', false);
-                    });
-                })->count();
+                // Оптимизация: используем whereExists вместо whereHas
+                $activeAssignmentsCount = $model->users()
+                    ->whereExists(function ($subquery) {
+                        $subquery->select(\Illuminate\Support\Facades\DB::raw(1))
+                            ->from('order_assignments')
+                            ->join('orders', 'order_assignments.order_id', '=', 'orders.id')
+                            ->whereColumn('order_assignments.user_id', 'users.id')
+                            ->where('orders.is_archived', false);
+                    })
+                    ->count();
                 if ($activeAssignmentsCount > 0) {
                     return "используется в $activeAssignmentsCount активных назначениях";
                 }

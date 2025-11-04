@@ -48,8 +48,13 @@ class UserController extends Controller
             }
 
             if ($request->has('role') && $request->role) {
-                $query->whereHas('roles', function ($q) use ($request) {
-                    $q->where('name', $request->role);
+                // Оптимизация: используем whereExists вместо whereHas
+                $query->whereExists(function ($subquery) use ($request) {
+                    $subquery->select(\Illuminate\Support\Facades\DB::raw(1))
+                        ->from('user_roles')
+                        ->join('roles', 'user_roles.role_id', '=', 'roles.id')
+                        ->whereColumn('user_roles.user_id', 'users.id')
+                        ->where('roles.name', $request->role);
                 });
             }
 
@@ -97,9 +102,14 @@ class UserController extends Controller
             abort(401, 'Необходима аутентификация');
         }
 
+        // Оптимизация: используем whereExists вместо whereHas для лучшей производительности
         $users = User::with('roles')
-            ->whereHas('roles', function ($query) use ($role) {
-                $query->where('name', $role);
+            ->whereExists(function ($subquery) use ($role) {
+                $subquery->select(\Illuminate\Support\Facades\DB::raw(1))
+                    ->from('user_roles')
+                    ->join('roles', 'user_roles.role_id', '=', 'roles.id')
+                    ->whereColumn('user_roles.user_id', 'users.id')
+                    ->where('roles.name', $role);
             })
             ->where('is_active', true)
             ->get();
@@ -179,29 +189,38 @@ class UserController extends Controller
             }
         }
 
-        $newUser = User::create([
-            'name' => $data['name'],
-            'username' => $data['username'],
-            'phone' => $data['phone'] ?? null,
-            'password' => Hash::make($data['password']),
-            'image' => $imagePath,
-            'is_active' => $data['is_active'] ?? true,
-        ]);
+        try {
+            $newUser = User::create([
+                'name' => $data['name'],
+                'username' => $data['username'],
+                'phone' => $data['phone'] ?? null,
+                'password' => Hash::make($data['password']),
+                'image' => $imagePath,
+                'is_active' => $data['is_active'] ?? true,
+            ]);
 
-        $newUser->roles()->sync($data['roles']);
+            $newUser->roles()->sync($data['roles']);
+        } catch (\Exception $e) {
+            // Удаляем загруженное изображение при ошибке
+            if ($imagePath && Storage::disk('public')->exists($imagePath)) {
+                Storage::disk('public')->delete($imagePath);
+            }
 
-        // Агрессивная очистка кэша пользователей
-        CacheService::invalidateUsersByStageRolesCache();
+            \Log::error('Error creating user', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+                'username' => $data['username'] ?? null
+            ]);
 
-        // Дополнительно очищаем специфичный кэш для getAllUsersByStageRoles
-        \Illuminate\Support\Facades\Cache::forget('stages_users_by_roles_all');
-        \Illuminate\Support\Facades\Cache::forget('users_all');
+            return response()->json([
+                'message' => 'Ошибка при создании пользователя',
+                'error' => config('app.debug') ? $e->getMessage() : null
+            ], 500);
+        }
 
-        // Очищаем кэш пользователей
-        CacheService::invalidateByTags([CacheService::TAG_USERS]);
-
-        // Принудительно очищаем все кэши связанные с пользователями
-        \Illuminate\Support\Facades\Cache::flush();
+        // Оптимизация: точечная инвалидация кэша только для созданного пользователя
+        CacheService::invalidateUserCaches($newUser->id);
+        CacheService::invalidateByTags([CacheService::TAG_USERS, CacheService::TAG_STATS]);
 
         return new UserResource($newUser->fresh('roles'));
     }
@@ -281,24 +300,35 @@ class UserController extends Controller
             $user->is_active = $data['is_active'];
         }
 
-        $user->save();
+        try {
+            $user->save();
 
-        if (isset($data['roles'])) {
-            $user->roles()->sync($data['roles']);
+            if (isset($data['roles'])) {
+                $user->roles()->sync($data['roles']);
+            }
+        } catch (\Exception $e) {
+            // Если произошла ошибка и мы загрузили новое изображение, удаляем его
+            if (isset($imagePath) && $imagePath && Storage::disk('public')->exists($imagePath)) {
+                Storage::disk('public')->delete($imagePath);
+                // Восстанавливаем старое изображение
+                $user->image = $user->getOriginal('image');
+            }
+
+            \Log::error('Error updating user', [
+                'user_id' => $user->id,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+
+            return response()->json([
+                'message' => 'Ошибка при обновлении пользователя',
+                'error' => config('app.debug') ? $e->getMessage() : null
+            ], 500);
         }
 
-        // Агрессивная очистка кэша пользователей
-        CacheService::invalidateUsersByStageRolesCache();
-
-        // Дополнительно очищаем специфичный кэш для getAllUsersByStageRoles
-        \Illuminate\Support\Facades\Cache::forget('stages_users_by_roles_all');
-        \Illuminate\Support\Facades\Cache::forget('users_all');
-
-        // Очищаем кэш пользователей
-        CacheService::invalidateByTags([CacheService::TAG_USERS]);
-
-        // Принудительно очищаем все кэши связанные с пользователями
-        \Illuminate\Support\Facades\Cache::flush();
+        // Оптимизация: точечная инвалидация кэша только для обновленного пользователя
+        CacheService::invalidateUserCaches($user->id);
+        CacheService::invalidateByTags([CacheService::TAG_USERS, CacheService::TAG_STATS]);
 
         return response()->json(new UserResource($user->fresh('roles')));
     }
@@ -346,8 +376,9 @@ class UserController extends Controller
                 ], 500);
             }
 
-            // Очищаем кэш пользователей по ролям стадий
-            CacheService::invalidateUsersByStageRolesCache();
+            // Оптимизация: точечная инвалидация кэша только для удаленного пользователя
+            CacheService::invalidateUserCaches($userToDelete->id);
+            CacheService::invalidateByTags([CacheService::TAG_USERS, CacheService::TAG_STATS]);
 
             return response()->json(['message' => 'Пользователь удалён']);
         } catch (\Exception $e) {
@@ -380,18 +411,9 @@ class UserController extends Controller
         // Очищаем кэш ролей пользователя
         \Illuminate\Support\Facades\Cache::forget("user_roles_{$userId}");
 
-        // Агрессивная очистка кэша пользователей
-        CacheService::invalidateUsersByStageRolesCache();
-
-        // Дополнительно очищаем специфичный кэш для getAllUsersByStageRoles
-        \Illuminate\Support\Facades\Cache::forget('stages_users_by_roles_all');
-        \Illuminate\Support\Facades\Cache::forget('users_all');
-
-        // Очищаем кэш пользователей
-        CacheService::invalidateByTags([CacheService::TAG_USERS]);
-
-        // Принудительно очищаем все кэши связанные с пользователями
-        \Illuminate\Support\Facades\Cache::flush();
+        // Оптимизация: точечная инвалидация кэша только для измененного пользователя
+        CacheService::invalidateUserCaches($userId);
+        CacheService::invalidateByTags([CacheService::TAG_USERS, CacheService::TAG_STATS]);
 
         return response()->json([
             'message' => $newStatus ? 'Пользователь активирован' : 'Пользователь деактивирован',
@@ -477,7 +499,7 @@ class UserController extends Controller
 
         return response()->json([
             'message' => 'Профиль успешно обновлен',
-            'user' => new UserResource($user->load('roles'))
+            'user' => new UserResource(User::with('roles')->find($user->id))
         ]);
     }
 

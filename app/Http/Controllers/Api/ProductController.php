@@ -93,13 +93,22 @@ class ProductController extends Controller
                 ]);
             }
         } else {
-            // If no stages provided, ensure all stages are available (for backward compatibility)
-            $allStages = \App\Models\Stage::all();
+            // Оптимизация: выбираем только необходимые поля и используем массовую вставку
+            $allStages = \App\Models\Stage::select('id', 'name')->get();
+            $stageData = [];
             foreach ($allStages as $stage) {
-                \App\Models\ProductStage::updateOrCreate(
-                    ['product_id' => $product->id, 'stage_id' => $stage->id],
-                    ['is_available' => true, 'is_default' => $stage->name === 'draft']
-                );
+                $stageData[] = [
+                    'product_id' => $product->id,
+                    'stage_id' => $stage->id,
+                    'is_available' => true,
+                    'is_default' => $stage->name === 'draft',
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ];
+            }
+            // Используем insertOrIgnore для массовой вставки (быстрее чем цикл с updateOrCreate)
+            if (!empty($stageData)) {
+                \App\Models\ProductStage::insertOrIgnore($stageData);
             }
         }
 
@@ -108,8 +117,36 @@ class ProductController extends Controller
             $product->categories()->sync($data['categories']);
         }
 
-        // Используем with() вместо load() для предотвращения N+1 проблемы
-        $product = Product::with(['assignments.user', 'orders.assignments', 'availableStages.roles', 'productStages.stage.roles', 'categories'])->find($product->id);
+        // Оптимизация: убираем загрузку orders.assignments - это может быть очень тяжело
+        // Загружаем только необходимые relationships с select() для оптимизации
+        $product = Product::select('id', 'name', 'description', 'price', 'created_at', 'updated_at')
+            ->with([
+                'assignments' => function ($q) {
+                    $q->select('id', 'product_id', 'user_id', 'role_type', 'is_active');
+                },
+                'assignments.user' => function ($q) {
+                    $q->select('id', 'name', 'username');
+                },
+                'availableStages' => function ($q) {
+                    $q->select('stages.id', 'stages.name', 'stages.display_name', 'stages.order');
+                },
+                'availableStages.roles' => function ($q) {
+                    $q->select('roles.id', 'roles.name', 'roles.display_name');
+                },
+                'productStages' => function ($q) {
+                    $q->select('id', 'product_id', 'stage_id');
+                },
+                'productStages.stage' => function ($q) {
+                    $q->select('stages.id', 'stages.name', 'stages.display_name', 'stages.order');
+                },
+                'productStages.stage.roles' => function ($q) {
+                    $q->select('roles.id', 'roles.name', 'roles.display_name');
+                },
+                'categories' => function ($q) {
+                    $q->select('categories.id', 'categories.name');
+                }
+            ])
+            ->find($product->id);
 
         // Очищаем кэш продуктов после создания
         CacheService::invalidateProductCaches();
@@ -123,8 +160,14 @@ class ProductController extends Controller
             abort(403, 'Доступ запрещён');
         }
 
-        $products = CacheService::rememberWithTags('all_products', 1800, function () {
-            return Product::select('id', 'name', 'created_at')->orderBy('id')->get();
+        // Оптимизация: добавляем лимит для предотвращения загрузки всех продуктов
+        $limit = min((int) request()->get('limit', 500), 5000); // Максимум 5000
+        $cacheKey = 'all_products_limit_' . $limit;
+        $products = CacheService::rememberWithTags($cacheKey, 1800, function () use ($limit) {
+            return Product::select('id', 'name', 'created_at')
+                ->orderBy('id')
+                ->limit($limit)
+                ->get();
         }, [CacheService::TAG_PRODUCTS]);
         return response()->json($products);
     }
@@ -168,12 +211,25 @@ class ProductController extends Controller
                 ]);
             }
         } else {
-            // If no stages provided, ensure all stages are available (for backward compatibility)
-            $allStages = \App\Models\Stage::all();
+            // Оптимизация: выбираем только необходимые поля и используем массовое обновление
+            $allStages = \App\Models\Stage::select('id', 'name')->get();
+            $stageData = [];
             foreach ($allStages as $stage) {
-                \App\Models\ProductStage::updateOrCreate(
-                    ['product_id' => $product->id, 'stage_id' => $stage->id],
-                    ['is_available' => true, 'is_default' => $stage->name === 'draft']
+                $stageData[] = [
+                    'product_id' => $product->id,
+                    'stage_id' => $stage->id,
+                    'is_available' => true,
+                    'is_default' => $stage->name === 'draft',
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ];
+            }
+            // Используем upsert для массового обновления/вставки (быстрее чем цикл с updateOrCreate)
+            if (!empty($stageData)) {
+                \App\Models\ProductStage::upsert(
+                    $stageData,
+                    ['product_id', 'stage_id'],
+                    ['is_available', 'is_default', 'updated_at']
                 );
             }
         }

@@ -44,7 +44,8 @@ class CategoryController extends Controller
      */
     public function show(Category $category): JsonResponse
     {
-        $category->load('products');
+        // Используем with() вместо load() для предотвращения N+1 проблемы
+        $category = Category::with('products')->find($category->id);
 
         return response()->json([
             'data' => $category

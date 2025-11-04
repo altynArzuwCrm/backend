@@ -50,7 +50,8 @@ class OrderAssignmentController extends Controller
             abort(403, 'Доступ запрещён');
         }
 
-        return response()->json($assignment->load(['user.roles', 'order', 'assignedBy']));
+        $assignment = OrderAssignment::with(['user.roles', 'order', 'assignedBy'])->find($assignment->id);
+        return response()->json($assignment);
     }
 
     public function assign(Request $request, Order $order)
@@ -127,7 +128,7 @@ class OrderAssignmentController extends Controller
 
             return response()->json([
                 'message' => 'User assigned successfully',
-                'assignment' => $assignment->load(['user.roles', 'orderStageAssignments.stage']),
+                'assignment' => OrderAssignment::with(['user.roles', 'orderStageAssignments.stage'])->find($assignment->id),
             ]);
         });
     }
@@ -193,7 +194,7 @@ class OrderAssignmentController extends Controller
                     }
                 } else {
                     // Автоназначение на стадии по роли и текущей стадии заказа
-                    $currentStage = Stage::where('name', $order->current_stage)->first();
+                    $currentStage = Stage::findByName($order->current_stage);
                     if ($currentStage) {
                         $roleStages = $currentStage->roles()->where('name', $assignmentData['role_type'])->where('stage_roles.auto_assign', true)->get();
                         foreach ($roleStages as $stage) {
@@ -447,9 +448,16 @@ class OrderAssignmentController extends Controller
         \Illuminate\Support\Facades\Cache::forget($orderCacheKey);
 
         if ($oldStatus !== $assignment->status) {
-            $adminsAndManagers = \App\Models\User::whereHas('roles', function ($q) {
-                $q->whereIn('name', ['admin', 'manager']);
-            })->get();
+            // Оптимизация: используем whereExists вместо whereHas
+            $adminsAndManagers = \App\Models\User::whereExists(function ($subquery) {
+                $subquery->select(DB::raw(1))
+                    ->from('user_roles')
+                    ->join('roles', 'user_roles.role_id', '=', 'roles.id')
+                    ->whereColumn('user_roles.user_id', 'users.id')
+                    ->whereIn('roles.name', ['admin', 'manager']);
+            })
+            ->select('id', 'name', 'username', 'email')
+            ->get();
 
             foreach ($adminsAndManagers as $admin) {
                 try {
@@ -584,7 +592,7 @@ class OrderAssignmentController extends Controller
 
         return response()->json([
             'message' => 'Пользователь назначен на стадию успешно',
-            'assignment' => $assignment->load(['user', 'orderStageAssignments.stage']),
+            'assignment' => OrderAssignment::with(['user', 'orderStageAssignments.stage'])->find($assignment->id),
         ]);
     }
 
@@ -624,7 +632,7 @@ class OrderAssignmentController extends Controller
 
         return response()->json([
             'message' => 'Пользователь удален со стадии успешно',
-            'assignment' => $assignment->load(['user', 'orderStageAssignments.stage']),
+            'assignment' => OrderAssignment::with(['user', 'orderStageAssignments.stage'])->find($assignment->id),
         ]);
     }
 }

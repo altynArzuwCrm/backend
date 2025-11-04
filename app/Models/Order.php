@@ -4,7 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Support\Facades\Cache;
+use App\Services\CacheService;
 
 class Order extends Model
 {
@@ -37,8 +37,13 @@ class Order extends Model
         static::creating(function ($order) {
             // Если stage_id не установлен, устанавливаем первую РАБОЧУЮ стадию
             if (!$order->stage_id) {
+                // Оптимизация: используем whereExists вместо whereHas
                 $firstWorkingStage = \App\Models\Stage::ordered()
-                    ->whereHas('roles')
+                    ->whereExists(function ($subquery) {
+                        $subquery->select(\Illuminate\Support\Facades\DB::raw(1))
+                            ->from('stage_roles')
+                            ->whereColumn('stage_roles.stage_id', 'stages.id');
+                    })
                     ->first();
                 if ($firstWorkingStage) {
                     $order->stage_id = $firstWorkingStage->id;
@@ -66,9 +71,9 @@ class Order extends Model
             
             // Очищаем кэш заказов при создании нового заказа
             try {
-                Cache::flush();
+                CacheService::invalidateOrderCaches($order->id);
             } catch (\Exception $e) {
-                \Log::warning('Failed to flush cache', ['error' => $e->getMessage()]);
+                \Log::warning('Failed to invalidate cache', ['error' => $e->getMessage()]);
             }
         });
         static::updated(function ($order) {
@@ -102,10 +107,10 @@ class Order extends Model
             
             // Очищаем кэш заказов при обновлении заказа
             try {
-                Cache::flush();
+                CacheService::invalidateOrderCaches($order->id);
             } catch (\Exception $e) {
                 // Игнорируем ошибки очистки кэша
-                \Log::warning('Failed to flush cache', ['error' => $e->getMessage()]);
+                \Log::warning('Failed to invalidate cache', ['error' => $e->getMessage()]);
             }
         });
         static::deleted(function ($order) {
@@ -122,9 +127,10 @@ class Order extends Model
             
             // Очищаем кэш заказов при удалении заказа
             try {
-                Cache::flush();
+                $orderId = $order->id ?? null;
+                CacheService::invalidateOrderCaches($orderId);
             } catch (\Exception $e) {
-                \Log::warning('Failed to flush cache', ['error' => $e->getMessage()]);
+                \Log::warning('Failed to invalidate cache', ['error' => $e->getMessage()]);
             }
         });
     }
@@ -207,7 +213,7 @@ class Order extends Model
             return null;
         }
 
-        $currentStage = Stage::where('name', $stageName)->first();
+        $currentStage = Stage::findByName($stageName);
         if (!$currentStage) {
             return null;
         }
@@ -226,11 +232,14 @@ class Order extends Model
             }
 
             // Проверяем, есть ли назначения для этой стадии
+            // Оптимизация: используем whereExists вместо whereHas
             $stageAssignments = $this->assignments()
-                ->whereHas('orderStageAssignments', function ($q) use ($stageName) {
-                    $q->whereHas('stage', function ($sq) use ($stageName) {
-                        $sq->where('name', $stageName);
-                    });
+                ->whereExists(function ($subquery) use ($stageName) {
+                    $subquery->select(\Illuminate\Support\Facades\DB::raw(1))
+                        ->from('order_stage_assignments')
+                        ->join('stages', 'order_stage_assignments.stage_id', '=', 'stages.id')
+                        ->whereColumn('order_stage_assignments.order_assignment_id', 'order_assignments.id')
+                        ->where('stages.name', $stageName);
                 })
                 ->get();
 
@@ -248,7 +257,7 @@ class Order extends Model
         }
 
         // Если не нашли стадию с неодобренными назначениями - возвращаем completed
-        $completedStage = Stage::where('name', 'completed')->first();
+        $completedStage = Stage::findByName('completed');
         return $completedStage ? $completedStage->name : 'completed';
     }
 
@@ -272,11 +281,14 @@ class Order extends Model
         }
 
         // Get ALL assignments for the current stage (not just required roles)
+        // Оптимизация: используем whereExists вместо whereHas
         $stageAssignments = $this->assignments()
-            ->whereHas('orderStageAssignments', function ($q) use ($stageName) {
-                $q->whereHas('stage', function ($sq) use ($stageName) {
-                    $sq->where('name', $stageName);
-                });
+            ->whereExists(function ($subquery) use ($stageName) {
+                $subquery->select(\Illuminate\Support\Facades\DB::raw(1))
+                    ->from('order_stage_assignments')
+                    ->join('stages', 'order_stage_assignments.stage_id', '=', 'stages.id')
+                    ->whereColumn('order_stage_assignments.order_assignment_id', 'order_assignments.id')
+                    ->where('stages.name', $stageName);
             })
             ->get();
 
@@ -305,14 +317,19 @@ class Order extends Model
                 $product = $this->product;
 
                 // Динамическая проверка ролей для текущей стадии
-                $currentStageModel = Stage::where('name', $currentStageName)->first();
+                $currentStageModel = Stage::findByName($currentStageName);
                 if ($currentStageModel && $product) {
                     $stageRoles = $currentStageModel->roles;
 
                     foreach ($stageRoles as $role) {
+                        // Оптимизация: используем whereExists вместо whereHas
                         $assignments = $this->assignments()
-                            ->whereHas('user.roles', function ($q) use ($role) {
-                                $q->where('name', $role->name);
+                            ->whereExists(function ($subquery) use ($role) {
+                                $subquery->select(\Illuminate\Support\Facades\DB::raw(1))
+                                    ->from('user_roles')
+                                    ->join('roles', 'user_roles.role_id', '=', 'roles.id')
+                                    ->whereColumn('user_roles.user_id', 'order_assignments.user_id')
+                                    ->where('roles.name', $role->name);
                             })
                             ->get();
 
@@ -326,7 +343,7 @@ class Order extends Model
             $oldStageName = is_string($this->stage) ? $this->stage : $this->stage->name ?? null;
 
             // Находим ID следующей стадии
-            $nextStageModel = Stage::where('name', $nextStage)->first();
+            $nextStageModel = Stage::findByName($nextStage);
             if ($nextStageModel) {
                 $this->stage_id = $nextStageModel->id;
                 $this->save();

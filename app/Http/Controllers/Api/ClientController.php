@@ -67,29 +67,34 @@ class ClientController extends Controller
         return response()->json($clients, 200);
     }
 
-    public function allClients()
+    public function allClients(Request $request)
     {
         if (Gate::denies('allClients', Client::class)) {
             abort(403, 'Доступ запрещён');
         }
 
         $user = request()->user();
-        $cacheKey = 'clients_for_user_' . $user->id . '_roles_' . $user->roles->pluck('name')->implode('-');
-        $clients = CacheService::rememberWithTags($cacheKey, 1800, function () use ($user) {
+        // Разрешаем указать лимит через параметр, по умолчанию 500 для селектов
+        $limit = min((int) $request->get('limit', 500), 5000); // Максимум 5000
+        
+        $cacheKey = 'clients_for_user_' . $user->id . '_roles_' . $user->roles->pluck('name')->implode('-') . '_limit_' . $limit;
+        $clients = CacheService::rememberWithTags($cacheKey, 1800, function () use ($user, $limit) {
             // Оптимизация: выбираем только необходимые поля для уменьшения размера данных
             $query = Client::select('id', 'name', 'company_name', 'created_at')
                 ->with(['contacts' => function ($q) {
                     $q->select('id', 'client_id', 'type', 'value');
                 }]);
             if (!$user->hasAnyRole(['admin', 'manager'])) {
-                $assignedClientIds = \App\Models\OrderAssignment::query()
-                    ->where('user_id', $user->id)
-                    ->join('orders', 'order_assignments.order_id', '=', 'orders.id')
-                    ->pluck('orders.client_id')
-                    ->unique();
-                $query->whereIn('id', $assignedClientIds);
+                // Оптимизация: используем whereExists вместо pluck + whereIn
+                $query->whereExists(function ($subquery) use ($user) {
+                    $subquery->select(DB::raw(1))
+                        ->from('order_assignments')
+                        ->join('orders', 'order_assignments.order_id', '=', 'orders.id')
+                        ->whereColumn('orders.client_id', 'clients.id')
+                        ->where('order_assignments.user_id', $user->id);
+                });
             }
-            return $query->orderBy('id')->get();
+            return $query->orderBy('id')->limit($limit)->get();
         }, [CacheService::TAG_CLIENTS]);
         return $clients;
     }

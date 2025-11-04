@@ -33,7 +33,7 @@ class ProductStage extends Model
 
     public static function isStageAvailableForProduct($productId, $stageName)
     {
-        $stage = Stage::where('name', $stageName)->first();
+        $stage = Stage::findByName($stageName);
         if (!$stage) {
             return false;
         }

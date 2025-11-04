@@ -29,6 +29,7 @@ return new class extends Migration
         };
 
         // Индексы для таблицы orders (проверяем только те, которых может не быть)
+        $addIndexIfNotExists('orders', 'orders_client_id_index', 'client_id');
         $addIndexIfNotExists('orders', 'orders_project_id_index', 'project_id');
         $addIndexIfNotExists('orders', 'orders_product_id_index', 'product_id');
         $addIndexIfNotExists('orders', 'orders_deadline_index', 'deadline');
@@ -132,6 +133,10 @@ return new class extends Migration
 
         // orders
         Schema::table('orders', function (Blueprint $table) {
+            try {
+                $table->dropIndex(['client_id']);
+            } catch (\Exception $e) {
+            }
             try {
                 $table->dropIndex(['project_id']);
             } catch (\Exception $e) {

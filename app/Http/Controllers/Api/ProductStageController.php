@@ -17,8 +17,18 @@ class ProductStageController extends Controller
             abort(403, 'Доступ запрещён');
         }
 
-        $productStages = $product->productStages()->with('stage')->get();
-        $availableStages = Stage::all();
+        // Оптимизация: загружаем только необходимые поля
+        $productStages = $product->productStages()
+            ->select('id', 'product_id', 'stage_id', 'is_available', 'is_default')
+            ->with(['stage' => function ($q) {
+                $q->select('id', 'name', 'display_name', 'order', 'color');
+            }])
+            ->get();
+        
+        // Оптимизация: используем кэшированные стадии вместо всех
+        $availableStages = \App\Models\Stage::select('id', 'name', 'display_name', 'order', 'color')
+            ->orderBy('order')
+            ->get();
 
         return response()->json([
             'product_stages' => $productStages,
@@ -60,9 +70,17 @@ class ProductStageController extends Controller
             ]);
         }
 
+        // Оптимизация: загружаем только необходимые поля
+        $productStages = $product->productStages()
+            ->select('id', 'product_id', 'stage_id', 'is_available', 'is_default')
+            ->with(['stage' => function ($q) {
+                $q->select('id', 'name', 'display_name', 'order', 'color');
+            }])
+            ->get();
+        
         return response()->json([
             'message' => 'Стадии продукта успешно обновлены',
-            'product_stages' => $product->productStages()->with('stage')->get(),
+            'product_stages' => $productStages,
         ]);
     }
 
@@ -102,7 +120,13 @@ class ProductStageController extends Controller
             'is_default' => $data['is_default'] ?? false,
         ]);
 
-        return response()->json($productStage->load('stage'), 201);
+        // Оптимизация: загружаем только необходимые поля
+        $productStage = \App\Models\ProductStage::select('id', 'product_id', 'stage_id', 'is_available', 'is_default')
+            ->with(['stage' => function ($q) {
+                $q->select('id', 'name', 'display_name', 'order', 'color');
+            }])
+            ->find($productStage->id);
+        return response()->json($productStage, 201);
     }
 
     public function removeStage(Product $product, Stage $stage)

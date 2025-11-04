@@ -67,7 +67,7 @@ class OrderAssignment extends Model
         // Поддержка и ID и name для совместимости
         $stage = is_numeric($stageIdentifier)
             ? Stage::find($stageIdentifier)
-            : Stage::where('name', $stageIdentifier)->first();
+            : Stage::findByName($stageIdentifier);
             
         if ($stage) {
             OrderStageAssignment::updateOrCreate([
@@ -81,7 +81,7 @@ class OrderAssignment extends Model
 
     public function removeFromStage($stageName)
     {
-        $stage = Stage::where('name', $stageName)->first();
+        $stage = Stage::findByName($stageName);
         if ($stage) {
             OrderStageAssignment::where('order_assignment_id', $this->id)
                 ->where('stage_id', $stage->id)

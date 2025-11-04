@@ -84,7 +84,7 @@ class AuthController extends Controller
 
     public function me(Request $request)
     {
-        $user = $request->user()->load('roles');
+        $user = User::with('roles')->find($request->user()->id);
         return new UserResource($user);
     }
 }

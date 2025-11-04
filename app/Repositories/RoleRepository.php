@@ -6,6 +6,8 @@ use App\Models\Role;
 use App\DTOs\RoleDTO;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Http\Request;
+use App\Services\CacheService;
+use Illuminate\Support\Facades\DB;
 
 class RoleRepository
 {
@@ -53,7 +55,11 @@ class RoleRepository
             $role->stages()->attach($data['stages']);
         }
 
-        return RoleDTO::fromModel($role->load('stages'));
+        // Инвалидируем кэш ролей
+        CacheService::invalidateRoleCaches();
+        
+        $role = Role::with('stages')->find($role->id);
+        return RoleDTO::fromModel($role);
     }
 
     public function updateRole(Role $role, array $data): RoleDTO
@@ -65,12 +71,21 @@ class RoleRepository
             $role->stages()->sync($data['stages']);
         }
 
-        return RoleDTO::fromModel($role->load('stages'));
+        // Инвалидируем кэш ролей
+        CacheService::invalidateRoleCaches();
+        
+        $role = Role::with('stages')->find($role->id);
+        return RoleDTO::fromModel($role);
     }
 
     public function deleteRole(Role $role): bool
     {
-        return $role->delete();
+        $result = $role->delete();
+        
+        // Инвалидируем кэш ролей
+        CacheService::invalidateRoleCaches();
+        
+        return $result;
     }
 
     public function getAllRoles(): array
@@ -95,8 +110,11 @@ class RoleRepository
     public function getRolesByStage(int $stageId): array
     {
         $roles = Role::with(['stages'])
-            ->whereHas('stages', function ($query) use ($stageId) {
-                $query->where('stages.id', $stageId);
+            ->whereExists(function ($subquery) use ($stageId) {
+                $subquery->select(DB::raw(1))
+                    ->from('stage_roles')
+                    ->whereColumn('stage_roles.role_id', 'roles.id')
+                    ->where('stage_roles.stage_id', $stageId);
             })
             ->get();
         return array_map([RoleDTO::class, 'fromModel'], $roles->toArray());

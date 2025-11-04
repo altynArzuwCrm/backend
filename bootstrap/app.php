@@ -5,6 +5,7 @@ use App\Http\Middleware\RedirectIfAuthenticated;
 use App\Http\Middleware\RoleMiddleware;
 use App\Http\Middleware\HandleNullRelations;
 use App\Http\Middleware\ClearCacheMiddleware;
+use App\Http\Middleware\CompressResponse;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -35,6 +36,11 @@ return Application::configure(basePath: dirname(__DIR__))
 
         // Добавляем middleware для автоматической очистки кэша
         $middleware->append(ClearCacheMiddleware::class);
+        
+        // Добавляем сжатие ответов для API (для медленного интернета)
+        $middleware->api(append: [
+            CompressResponse::class,
+        ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         //

@@ -20,7 +20,13 @@ class RoleController extends Controller
 
         // Кэшируем роли на 2 часа для быстрых ответов
         $roles = CacheService::rememberWithTags(CacheService::PATTERN_ROLES_WITH_USERS, 7200, function () {
-            return Role::withCount('users')->with('stages')->orderBy('display_name')->get();
+            return Role::select('id', 'name', 'display_name', 'description', 'created_at', 'updated_at')
+                ->withCount('users')
+                ->with(['stages' => function ($q) {
+                    $q->select('stages.id', 'stages.name', 'stages.display_name', 'stages.order');
+                }])
+                ->orderBy('display_name')
+                ->get();
         }, [CacheService::TAG_ROLES]);
 
         return response()->json($roles);
@@ -40,6 +46,9 @@ class RoleController extends Controller
 
         $role = Role::create($data);
 
+        // Инвалидируем кэш ролей
+        CacheService::invalidateRoleCaches();
+
         return response()->json($role, 201);
     }
 
@@ -49,7 +58,18 @@ class RoleController extends Controller
             abort(403, 'Доступ запрещён');
         }
 
-        return response()->json($role->load(['users', 'stages']));
+        // Оптимизация: загружаем только необходимые поля
+        $role = Role::select('id', 'name', 'display_name', 'description', 'created_at', 'updated_at')
+            ->with([
+                'users' => function ($q) {
+                    $q->select('id', 'name', 'username', 'email');
+                },
+                'stages' => function ($q) {
+                    $q->select('stages.id', 'stages.name', 'stages.display_name', 'stages.order');
+                }
+            ])
+            ->find($role->id);
+        return response()->json($role);
     }
 
     public function update(Request $request, Role $role)
@@ -66,7 +86,16 @@ class RoleController extends Controller
 
         $role->update($data);
 
-        return response()->json($role->load('stages'));
+        // Инвалидируем кэш ролей
+        CacheService::invalidateRoleCaches();
+
+        // Оптимизация: загружаем только необходимые поля
+        $role = Role::select('id', 'name', 'display_name', 'description', 'created_at', 'updated_at')
+            ->with(['stages' => function ($q) {
+                $q->select('id', 'name', 'display_name', 'order');
+            }])
+            ->find($role->id);
+        return response()->json($role);
     }
 
     public function destroy(Role $role)
@@ -76,11 +105,21 @@ class RoleController extends Controller
         }
 
         // Prevent deletion if role is being used in active assignments
-        $activeAssignmentsCount = $role->users()->whereHas('assignments', function ($query) {
-            $query->whereHas('order', function ($orderQuery) {
-                $orderQuery->where('is_archived', false);
-            });
-        })->count();
+        // Оптимизация: используем whereExists вместо whereHas
+        $activeAssignmentsCount = \App\Models\User::whereExists(function ($subquery) use ($role) {
+            $subquery->select(\Illuminate\Support\Facades\DB::raw(1))
+                ->from('user_roles')
+                ->whereColumn('user_roles.user_id', 'users.id')
+                ->where('user_roles.role_id', $role->id);
+        })
+        ->whereExists(function ($subquery) {
+            $subquery->select(\Illuminate\Support\Facades\DB::raw(1))
+                ->from('order_assignments')
+                ->join('orders', 'order_assignments.order_id', '=', 'orders.id')
+                ->whereColumn('order_assignments.user_id', 'users.id')
+                ->where('orders.is_archived', false);
+        })
+        ->count();
 
         if ($activeAssignmentsCount > 0) {
             return response()->json([
@@ -95,6 +134,9 @@ class RoleController extends Controller
         $role->stages()->detach();
 
         $role->delete();
+
+        // Инвалидируем кэш ролей
+        CacheService::invalidateRoleCaches();
 
         return response()->json([
             'message' => 'Роль успешно удалена'
@@ -114,6 +156,9 @@ class RoleController extends Controller
 
         $role->users()->attach($data['user_ids']);
 
+        // Инвалидируем кэш ролей и пользователей
+        CacheService::invalidateRoleCaches();
+
         return response()->json([
             'message' => 'Пользователи успешно назначены на роль'
         ]);
@@ -131,6 +176,9 @@ class RoleController extends Controller
         ]);
 
         $role->users()->detach($data['user_ids']);
+
+        // Инвалидируем кэш ролей и пользователей
+        CacheService::invalidateRoleCaches();
 
         return response()->json([
             'message' => 'Пользователи успешно исключены из роли'

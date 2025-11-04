@@ -74,8 +74,11 @@ class CommentController extends Controller
                 return response()->json(['error' => 'Нужно указать либо order_id, либо project_id, но не оба'], 422);
             }
 
+            // Загружаем заказ/проект один раз для проверки прав
+            $order = null;
+            $project = null;
             if (!empty($data['order_id'])) {
-                $order = Order::findOrFail($data['order_id']);
+                $order = Order::select('id', 'stage_id')->with('stage:id,name')->findOrFail($data['order_id']);
                 if (Gate::denies('view', $order)) {
                     return response()->json(['error' => 'Доступ запрещён'], 403);
                 }
@@ -93,8 +96,8 @@ class CommentController extends Controller
                 'text' => $data['text'],
             ]);
 
-            if (!empty($data['order_id'])) {
-                $order = Order::findOrFail($data['order_id']);
+            if (!empty($data['order_id']) && $order) {
+                // Используем уже загруженный заказ
                 $stage = $order->stage ? $order->stage->name : null;
                 $roleMap = [
                     'design' => 'designer',
@@ -105,12 +108,17 @@ class CommentController extends Controller
                 $notifiedUserIds = [];
                 if ($stage && isset($roleMap[$stage])) {
                     $roleType = $roleMap[$stage];
+                    // Оптимизация: используем whereExists вместо whereHas
                     $assignedUsers = $order->assignments()
-                        ->whereHas('user.roles', function ($q) use ($roleType) {
-                            $q->where('name', $roleType);
+                        ->whereExists(function ($subquery) use ($roleType) {
+                            $subquery->select(\Illuminate\Support\Facades\DB::raw(1))
+                                ->from('user_roles')
+                                ->join('roles', 'user_roles.role_id', '=', 'roles.id')
+                                ->whereColumn('user_roles.user_id', 'order_assignments.user_id')
+                                ->where('roles.name', $roleType);
                         })
                         ->where('status', '!=', 'cancelled')
-                        ->with('user')
+                        ->with('user:id,name,username')
                         ->get()
                         ->pluck('user')
                         ->filter();
@@ -121,9 +129,14 @@ class CommentController extends Controller
                         }
                     }
                 }
-                $adminsAndManagers = \App\Models\User::whereHas('roles', function ($q) {
-                    $q->whereIn('name', ['admin', 'manager']);
-                })->get();
+                // Оптимизация: используем whereExists вместо whereHas
+                $adminsAndManagers = \App\Models\User::whereExists(function ($subquery) {
+                    $subquery->select(\Illuminate\Support\Facades\DB::raw(1))
+                        ->from('user_roles')
+                        ->join('roles', 'user_roles.role_id', '=', 'roles.id')
+                        ->whereColumn('user_roles.user_id', 'users.id')
+                        ->whereIn('roles.name', ['admin', 'manager']);
+                })->select('id', 'name', 'username')->get();
                 foreach ($adminsAndManagers as $admin) {
                     if ($admin->id !== Auth::id() && !in_array($admin->id, $notifiedUserIds)) {
                         $admin->notify(new \App\Notifications\OrderCommented($order, $comment, Auth::user()));
@@ -141,7 +154,9 @@ class CommentController extends Controller
     public function show(Comment $comment)
     {
         $this->authorize('view', $comment);
-        return response()->json($comment->load('user.roles'));
+        // Используем with() вместо load() для предотвращения N+1 проблемы
+        $comment = Comment::with('user.roles')->find($comment->id);
+        return response()->json($comment);
     }
 
     public function destroy(Comment $comment)

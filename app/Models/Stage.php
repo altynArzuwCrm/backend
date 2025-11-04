@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Support\Facades\Cache;
 
 class Stage extends Model
 {
@@ -21,6 +22,29 @@ class Stage extends Model
     protected $casts = [
         'order' => 'integer'
     ];
+
+    /**
+     * Кэшированный поиск стадии по имени
+     * Кэш на 4 часа, так как стадии меняются редко
+     */
+    public static function findByName(string $name): ?self
+    {
+        $cacheKey = "stage_by_name_{$name}";
+        return Cache::remember($cacheKey, 14400, function () use ($name) {
+            return static::where('name', $name)->first();
+        });
+    }
+
+    /**
+     * Кэшированный поиск всех стадий с кэшированием по имени
+     */
+    public static function getAllStagesByName(): array
+    {
+        $cacheKey = 'stages_by_name_map';
+        return Cache::remember($cacheKey, 14400, function () {
+            return static::all()->keyBy('name')->toArray();
+        });
+    }
 
     public function roles()
     {

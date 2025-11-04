@@ -76,7 +76,8 @@ class StageController extends Controller
             $stage->roles()->attach($roleData);
         }
 
-        return response()->json($stage->load('roles'), 201);
+        $stage = Stage::with('roles')->find($stage->id);
+        return response()->json($stage, 201);
     }
 
     public function show(Stage $stage)
@@ -85,7 +86,8 @@ class StageController extends Controller
             abort(403, 'Доступ запрещён');
         }
 
-        return response()->json($stage->load('roles'));
+        $stage = Stage::with('roles')->find($stage->id);
+        return response()->json($stage);
     }
 
     public function update(Request $request, Stage $stage)
@@ -136,7 +138,8 @@ class StageController extends Controller
             $stage->roles()->sync($roleData);
         }
 
-        return response()->json($stage->load('roles'));
+        $stage = Stage::with('roles')->find($stage->id);
+        return response()->json($stage);
     }
 
     public function destroy(Stage $stage)
@@ -209,9 +212,18 @@ class StageController extends Controller
             return response()->json([]);
         }
 
-        $users = \App\Models\User::whereHas('roles', function ($query) use ($roleIds) {
-            $query->whereIn('roles.id', $roleIds);
-        })->with('roles')->get();
+        // Оптимизация: используем whereExists вместо whereHas
+        $users = \App\Models\User::whereExists(function ($subquery) use ($roleIds) {
+            $subquery->select(\Illuminate\Support\Facades\DB::raw(1))
+                ->from('user_roles')
+                ->whereColumn('user_roles.user_id', 'users.id')
+                ->whereIn('user_roles.role_id', $roleIds);
+        })
+        ->select('id', 'name', 'username', 'email', 'phone', 'is_active')
+        ->with(['roles' => function ($q) {
+            $q->select('roles.id', 'roles.name', 'roles.display_name');
+        }])
+        ->get();
 
         return response()->json($users);
     }
