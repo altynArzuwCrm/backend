@@ -63,6 +63,12 @@ class BulkDeleteController extends Controller
                 if ($validationError) {
                     $errors[] = "ID $id: {$validationError}";
                     $skipped++;
+                    Log::warning("Bulk delete validation failed for $entity ID $id", [
+                        'entity' => $entity,
+                        'id' => $id,
+                        'error' => $validationError,
+                        'user_id' => auth()->id()
+                    ]);
                     continue;
                 }
 
@@ -88,6 +94,11 @@ class BulkDeleteController extends Controller
                     'trace' => $e->getTraceAsString()
                 ]);
             }
+        }
+
+        // Дополнительная инвалидация кэша для всей сущности после массового удаления
+        if ($deleted > 0) {
+            $this->invalidateEntityCache($entity);
         }
 
         $response = [
@@ -188,11 +199,72 @@ class BulkDeleteController extends Controller
                 break;
 
             case 'stages':
-                // Можно добавить проверки если нужно
+                // Проверяем использование этапа во ВСЕХ заказах (активных и архивированных)
+                $allOrdersCount = $model->orders()->count();
+                $activeOrdersCount = $model->orders()->where('is_archived', false)->count();
+                $archivedOrdersCount = $model->orders()->where('is_archived', true)->count();
+                
+                // Проверяем использование этапа в продуктах (product_stages)
+                $productsCount = DB::table('product_stages')
+                    ->where('stage_id', $model->id)
+                    ->count();
+                
+                $errors = [];
+                
+                if ($allOrdersCount > 0) {
+                    $errors[] = "используется в {$allOrdersCount} заказах";
+                    if ($activeOrdersCount > 0) {
+                        $errors[] = "из них {$activeOrdersCount} активных";
+                    }
+                    if ($archivedOrdersCount > 0) {
+                        $errors[] = "и {$archivedOrdersCount} архивированных";
+                    }
+                }
+                
+                if ($productsCount > 0) {
+                    $errors[] = "используется в {$productsCount} продуктах";
+                }
+                
+                if (!empty($errors)) {
+                    return 'Невозможно удалить этап: ' . implode(', ', $errors) . '. Сначала удалите или измените все связанные заказы и продукты.';
+                }
                 break;
         }
 
         return null;
+    }
+
+    /**
+     * Инвалидация кэша для всей сущности
+     */
+    private function invalidateEntityCache(string $entity): void
+    {
+        switch ($entity) {
+            case 'clients':
+                CacheService::invalidateByTags([CacheService::TAG_CLIENTS]);
+                break;
+            case 'users':
+                CacheService::invalidateByTags([CacheService::TAG_USERS]);
+                break;
+            case 'products':
+                CacheService::invalidateByTags([CacheService::TAG_PRODUCTS]);
+                break;
+            case 'projects':
+                CacheService::invalidateByTags([CacheService::TAG_PROJECTS]);
+                break;
+            case 'orders':
+                CacheService::invalidateByTags([CacheService::TAG_ORDERS]);
+                break;
+            case 'categories':
+                CacheService::invalidateByTags([CacheService::TAG_CATEGORIES]);
+                break;
+            case 'roles':
+                CacheService::invalidateByTags([CacheService::TAG_ROLES]);
+                break;
+            case 'stages':
+                CacheService::invalidateByTags([CacheService::TAG_STAGES]);
+                break;
+        }
     }
 
     /**
@@ -225,6 +297,13 @@ class BulkDeleteController extends Controller
 
             case 'categories':
                 CacheService::invalidateByTags([CacheService::TAG_CATEGORIES]);
+                break;
+
+            case 'stages':
+                CacheService::invalidateStageCaches();
+                CacheService::invalidateByTags([CacheService::TAG_STAGES]);
+                // Также инвалидируем кеш заказов, так как удаление этапа влияет на заказы
+                CacheService::invalidateByTags([CacheService::TAG_ORDERS]);
                 break;
 
             default:

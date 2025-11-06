@@ -27,7 +27,7 @@ Route::post('login', [AuthController::class, 'login'])
 
 
 
-Route::middleware(['auth:sanctum', 'handle.null.relations', 'throttle:120,1'])->group(function () {
+Route::middleware(['auth:sanctum', 'handle.null.relations', 'throttle:300,1'])->group(function () {
     Route::post('logout', [AuthController::class, 'logout']);
     Route::get('me', [AuthController::class, 'me']);
     Route::post('user/profile', [UserController::class, 'updateProfile']);

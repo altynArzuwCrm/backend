@@ -12,6 +12,7 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 
 class StageController extends Controller
@@ -148,11 +149,41 @@ class StageController extends Controller
             abort(403, 'Доступ запрещён');
         }
 
-        // Prevent deletion if stage is being used in active orders
+        // Проверяем использование этапа во ВСЕХ заказах (активных и архивированных)
+        $allOrdersCount = $stage->orders()->count();
         $activeOrdersCount = $stage->orders()->where('is_archived', false)->count();
-        if ($activeOrdersCount > 0) {
+        $archivedOrdersCount = $stage->orders()->where('is_archived', true)->count();
+        
+        // Проверяем использование этапа в продуктах (product_stages)
+        $productsCount = DB::table('product_stages')
+            ->where('stage_id', $stage->id)
+            ->count();
+        
+        $errors = [];
+        
+        if ($allOrdersCount > 0) {
+            $errors[] = "Этап используется в {$allOrdersCount} заказах";
+            if ($activeOrdersCount > 0) {
+                $errors[] = "из них {$activeOrdersCount} активных";
+            }
+            if ($archivedOrdersCount > 0) {
+                $errors[] = "и {$archivedOrdersCount} архивированных";
+            }
+        }
+        
+        if ($productsCount > 0) {
+            $errors[] = "Этап используется в {$productsCount} продуктах";
+        }
+        
+        if (!empty($errors)) {
             return response()->json([
-                'message' => "Невозможно удалить стадию, которая используется в {$activeOrdersCount} активных заказах"
+                'message' => 'Невозможно удалить этап: ' . implode(', ', $errors) . '. Сначала удалите или измените все связанные заказы и продукты.',
+                'errors' => [
+                    'orders_count' => $allOrdersCount,
+                    'active_orders_count' => $activeOrdersCount,
+                    'archived_orders_count' => $archivedOrdersCount,
+                    'products_count' => $productsCount
+                ]
             ], 422);
         }
 

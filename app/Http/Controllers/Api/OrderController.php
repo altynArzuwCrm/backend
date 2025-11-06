@@ -33,10 +33,9 @@ class OrderController extends Controller
 
         $user = request()->user();
 
-        $cacheKey = 'orders_' . $user->id . '_' . md5($request->fullUrl());
-        $result = CacheService::rememberWithTags($cacheKey, 900, function () use ($request, $user) {
-            return $this->orderRepository->getPaginatedOrders($request, $user);
-        }, [CacheService::TAG_ORDERS]);
+        // Кэширование обрабатывается в OrderRepository
+        // чтобы избежать сериализации полных Eloquent моделей
+        $result = $this->orderRepository->getPaginatedOrders($request, $user);
 
         return response()->json($result);
     }
@@ -345,7 +344,7 @@ class OrderController extends Controller
                     if ($oldProject) {
                         $oldProject->recalculateTotalPrice();
                         // Инвалидируем кэш проекта
-                        CacheService::invalidateWithTags([CacheService::TAG_PROJECTS]);
+                        CacheService::invalidateByTags([CacheService::TAG_PROJECTS]);
                     }
                 } catch (\Exception $e) {
                     Log::warning("Failed to recalculate old project price after detach", [
@@ -452,7 +451,7 @@ class OrderController extends Controller
                     $oldProject = \App\Models\Project::find($oldProjectId);
                     if ($oldProject) {
                         $oldProject->recalculateTotalPrice();
-                        CacheService::invalidateWithTags([CacheService::TAG_PROJECTS]);
+                        CacheService::invalidateByTags([CacheService::TAG_PROJECTS]);
                     }
                 } catch (\Exception $e) {
                     Log::warning("Failed to recalculate old project price after attach", [
@@ -1032,7 +1031,7 @@ class OrderController extends Controller
                 if ($project) {
                     $project->recalculateTotalPrice();
                     // Инвалидируем кэш проекта
-                    CacheService::invalidateWithTags([CacheService::TAG_PROJECTS]);
+                    CacheService::invalidateByTags([CacheService::TAG_PROJECTS]);
                 }
             } catch (\Exception $e) {
                 Log::warning("Failed to recalculate project price", [

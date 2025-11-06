@@ -99,10 +99,12 @@ class CacheService
         if ($orderId) {
             // Invalidate specific order cache
             self::invalidate("order_{$orderId}");
-            // Invalidate order list caches that might contain this order
-            self::clearTaggedKeys(self::TAG_ORDERS);
         }
 
+        // Инвалидируем все кэши заказов через отслеживание ключей
+        self::clearTaggedKeys(self::TAG_ORDERS);
+        
+        // Также инвалидируем по тегам для совместимости
         self::invalidateByTags([self::TAG_ORDERS, self::TAG_STATS]);
     }
 

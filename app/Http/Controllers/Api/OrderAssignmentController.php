@@ -15,6 +15,7 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\DB;
 use App\Notifications\OrderAssigned;
+use App\Services\CacheService;
 
 class OrderAssignmentController extends Controller
 {
@@ -107,8 +108,7 @@ class OrderAssignmentController extends Controller
             ]);
 
             // Очищаем кэш заказа после создания назначения
-            $orderCacheKey = 'order_' . $order->id;
-            \Illuminate\Support\Facades\Cache::forget($orderCacheKey);
+            CacheService::invalidateOrderCaches($order->id);
 
             // Назначаем на текущую стадию заказа
             if ($order->stage) {
@@ -444,8 +444,7 @@ class OrderAssignmentController extends Controller
         $assignment->save();
 
         // Очищаем кэш заказа после обновления назначения
-        $orderCacheKey = 'order_' . $assignment->order_id;
-        \Illuminate\Support\Facades\Cache::forget($orderCacheKey);
+        CacheService::invalidateOrderCaches($assignment->order_id);
 
         if ($oldStatus !== $assignment->status) {
             // Оптимизация: используем whereExists вместо whereHas
@@ -535,8 +534,7 @@ class OrderAssignmentController extends Controller
             $assignment->delete();
 
             // Очищаем кэш заказа после удаления назначения
-            $orderCacheKey = 'order_' . $assignment->order_id;
-            \Illuminate\Support\Facades\Cache::forget($orderCacheKey);
+            CacheService::invalidateOrderCaches($assignment->order_id);
         } else {
             return response()->json([
                 'message' => 'You can\'t delete this assignment',

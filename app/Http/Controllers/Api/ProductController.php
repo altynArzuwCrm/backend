@@ -30,14 +30,9 @@ class ProductController extends Controller
             ], 403);
         }
 
-        // Проверяем, нужно ли принудительно обновить кэш
-        $cacheTime = $request->has('force_refresh') ? 0 : 900;
-        
-        // Кэшируем результаты поиска на 15 минут для быстрых ответов
-        $cacheKey = 'products_' . md5($request->fullUrl());
-        $result = CacheService::rememberWithTags($cacheKey, $cacheTime, function () use ($request) {
-            return $this->productRepository->getPaginatedProducts($request);
-        }, [CacheService::TAG_PRODUCTS]);
+        // Кэширование обрабатывается в ProductRepository
+        // чтобы избежать сериализации полных Eloquent моделей
+        $result = $this->productRepository->getPaginatedProducts($request);
 
         return response()->json($result);
     }
@@ -166,12 +161,46 @@ class ProductController extends Controller
         // Оптимизация: добавляем лимит для предотвращения загрузки всех продуктов
         $limit = min((int) request()->get('limit', 500), 5000); // Максимум 5000
         $cacheKey = 'all_products_limit_' . $limit;
-        $products = CacheService::rememberWithTags($cacheKey, 1800, function () use ($limit) {
-            return Product::select('id', 'name', 'created_at')
-                ->orderBy('id')
-                ->limit($limit)
-                ->get();
-        }, [CacheService::TAG_PRODUCTS]);
+        
+        // Проверяем кэш
+        $cached = Cache::get($cacheKey);
+        if ($cached !== null) {
+            // Восстанавливаем коллекцию из массива
+            $products = collect($cached)->map(function ($item) {
+                $product = new Product();
+                $product->id = $item['id'];
+                $product->name = $item['name'];
+                $product->created_at = $item['created_at'] ? \Carbon\Carbon::parse($item['created_at']) : null;
+                return $product;
+            });
+            return response()->json($products);
+        }
+
+        // Загружаем и кэшируем как массив
+        $products = Product::select('id', 'name', 'created_at')
+            ->orderBy('id')
+            ->limit($limit)
+            ->get();
+        
+        // Кэшируем как массив
+        $cacheData = $products->map(function ($product) {
+            return [
+                'id' => $product->id,
+                'name' => $product->name,
+                'created_at' => $product->created_at?->toDateTimeString(),
+            ];
+        })->toArray();
+        
+        Cache::put($cacheKey, $cacheData, 1800);
+        
+        // Отслеживаем ключ для инвалидации
+        $trackingKey = 'cache_keys_' . CacheService::TAG_PRODUCTS;
+        $keys = Cache::get($trackingKey, []);
+        if (!in_array($cacheKey, $keys)) {
+            $keys[] = $cacheKey;
+            Cache::put($trackingKey, $keys, 86400);
+        }
+        
         return response()->json($products);
     }
 
