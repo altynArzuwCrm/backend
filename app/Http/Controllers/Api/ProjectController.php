@@ -66,9 +66,12 @@ class ProjectController extends Controller
             $perPage = 30;
         }
 
+        // Проверяем, нужно ли принудительно обновить кэш
+        $cacheTime = $request->has('force_refresh') ? 0 : 900;
+        
         // Кэшируем результаты поиска на 15 минут для быстрых ответов
         $cacheKey = 'projects_' . $user->id . '_' . md5($request->fullUrl());
-        $projects = CacheService::rememberWithTags($cacheKey, 900, function () use ($query, $perPage) {
+        $projects = CacheService::rememberWithTags($cacheKey, $cacheTime, function () use ($query, $perPage) {
             return $query->paginate($perPage);
         }, [CacheService::TAG_PROJECTS]);
 
@@ -85,7 +88,7 @@ class ProjectController extends Controller
             }
 
             // Оптимизация: загружаем только необходимые поля заказов
-            $project = Project::select('id', 'title', 'deadline', 'total_price', 'payment_amount', 'client_id', 'created_at', 'updated_at')
+            $project = Project::select('id', 'title', 'deadline', 'total_price', 'payment_amount', 'created_at', 'updated_at')
                 ->with([
                     'orders' => function ($q) {
                         $q->select('id', 'project_id', 'product_id', 'client_id', 'stage_id', 'quantity', 'deadline', 'price', 'is_archived', 'created_at');

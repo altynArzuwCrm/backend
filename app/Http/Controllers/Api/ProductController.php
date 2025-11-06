@@ -30,9 +30,12 @@ class ProductController extends Controller
             ], 403);
         }
 
+        // Проверяем, нужно ли принудительно обновить кэш
+        $cacheTime = $request->has('force_refresh') ? 0 : 900;
+        
         // Кэшируем результаты поиска на 15 минут для быстрых ответов
         $cacheKey = 'products_' . md5($request->fullUrl());
-        $result = CacheService::rememberWithTags($cacheKey, 900, function () use ($request) {
+        $result = CacheService::rememberWithTags($cacheKey, $cacheTime, function () use ($request) {
             return $this->productRepository->getPaginatedProducts($request);
         }, [CacheService::TAG_PRODUCTS]);
 
@@ -119,7 +122,7 @@ class ProductController extends Controller
 
         // Оптимизация: убираем загрузку orders.assignments - это может быть очень тяжело
         // Загружаем только необходимые relationships с select() для оптимизации
-        $product = Product::select('id', 'name', 'description', 'price', 'created_at', 'updated_at')
+        $product = Product::select('id', 'name', 'created_at', 'updated_at')
             ->with([
                 'assignments' => function ($q) {
                     $q->select('id', 'product_id', 'user_id', 'role_type', 'is_active');

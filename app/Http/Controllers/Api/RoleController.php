@@ -62,7 +62,7 @@ class RoleController extends Controller
         $role = Role::select('id', 'name', 'display_name', 'description', 'created_at', 'updated_at')
             ->with([
                 'users' => function ($q) {
-                    $q->select('id', 'name', 'username', 'email');
+                    $q->select('id', 'name', 'username');
                 },
                 'stages' => function ($q) {
                     $q->select('stages.id', 'stages.name', 'stages.display_name', 'stages.order');

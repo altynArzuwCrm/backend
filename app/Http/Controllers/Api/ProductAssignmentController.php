@@ -251,7 +251,7 @@ class ProductAssignmentController extends Controller
                     ->whereColumn('user_roles.user_id', 'users.id')
                     ->where('roles.name', $roleType);
             })
-            ->select('id', 'name', 'username', 'email')
+            ->select('id', 'name', 'username')
             ->where('is_active', true)
             ->get();
 

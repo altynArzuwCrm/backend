@@ -456,7 +456,7 @@ class OrderAssignmentController extends Controller
                     ->whereColumn('user_roles.user_id', 'users.id')
                     ->whereIn('roles.name', ['admin', 'manager']);
             })
-            ->select('id', 'name', 'username', 'email')
+            ->select('id', 'name', 'username')
             ->get();
 
             foreach ($adminsAndManagers as $admin) {

@@ -27,7 +27,7 @@ Route::post('login', [AuthController::class, 'login'])
 
 
 
-Route::middleware(['auth:sanctum', 'handle.null.relations', 'throttle:60,1'])->group(function () {
+Route::middleware(['auth:sanctum', 'handle.null.relations', 'throttle:120,1'])->group(function () {
     Route::post('logout', [AuthController::class, 'logout']);
     Route::get('me', [AuthController::class, 'me']);
     Route::post('user/profile', [UserController::class, 'updateProfile']);
@@ -67,6 +67,9 @@ Route::middleware(['auth:sanctum', 'handle.null.relations', 'throttle:60,1'])->g
         Route::post('assign-to-stage', [OrderAssignmentController::class, 'assignToStage']);
         Route::post('remove-from-stage', [OrderAssignmentController::class, 'removeFromStage']);
     });
+    
+    // Массовая отвязка заказов от проекта
+    Route::post('orders/bulk-detach-from-project', [OrderController::class, 'bulkDetachFromProject']);
 
     Route::prefix('assignments')->group(function () {
         Route::get('/', [OrderAssignmentController::class, 'index']);

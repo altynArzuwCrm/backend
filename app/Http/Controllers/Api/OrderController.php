@@ -239,7 +239,7 @@ class OrderController extends Controller
             $userIds = collect($data['assignments'])->pluck('user_id')->unique()->values();
             $stageIds = collect($data['assignments'])->pluck('stage_id')->filter()->unique()->values();
             
-            $usersById = \App\Models\User::select('id', 'name', 'username', 'email')
+            $usersById = \App\Models\User::select('id', 'name', 'username')
                 ->whereIn('id', $userIds)
                 ->get()
                 ->keyBy('id');
@@ -340,9 +340,19 @@ class OrderController extends Controller
             
             // Пересчитываем цену старого проекта (если был)
             if ($oldProjectId) {
-                $oldProject = \App\Models\Project::find($oldProjectId);
-                if ($oldProject) {
-                    $oldProject->recalculateTotalPrice();
+                try {
+                    $oldProject = \App\Models\Project::find($oldProjectId);
+                    if ($oldProject) {
+                        $oldProject->recalculateTotalPrice();
+                        // Инвалидируем кэш проекта
+                        CacheService::invalidateWithTags([CacheService::TAG_PROJECTS]);
+                    }
+                } catch (\Exception $e) {
+                    Log::warning("Failed to recalculate old project price after detach", [
+                        'project_id' => $oldProjectId,
+                        'order_id' => $order->id,
+                        'error' => $e->getMessage()
+                    ]);
                 }
             }
             
@@ -428,8 +438,30 @@ class OrderController extends Controller
             }
         }
 
+        // Запоминаем старый project_id для пересчета цены старого проекта
+        $oldProjectId = $order->project_id;
+        $projectChanged = isset($data['project_id']) && $order->project_id != $data['project_id'];
+        
         try {
             $order->update($data);
+            
+            // Если проект изменился, пересчитываем цены обоих проектов
+            // (новый проект пересчитается через Order Observer, но старый нужно пересчитать вручную)
+            if ($projectChanged && $oldProjectId) {
+                try {
+                    $oldProject = \App\Models\Project::find($oldProjectId);
+                    if ($oldProject) {
+                        $oldProject->recalculateTotalPrice();
+                        CacheService::invalidateWithTags([CacheService::TAG_PROJECTS]);
+                    }
+                } catch (\Exception $e) {
+                    Log::warning("Failed to recalculate old project price after attach", [
+                        'project_id' => $oldProjectId,
+                        'order_id' => $order->id,
+                        'error' => $e->getMessage()
+                    ]);
+                }
+            }
         } catch (\Exception $e) {
             Log::error('Error updating order', [
                 'order_id' => $order->id,
@@ -459,7 +491,7 @@ class OrderController extends Controller
             $userIds = collect($data['assignments'])->pluck('user_id')->unique()->values();
             $stageIds = collect($data['assignments'])->pluck('stage_id')->filter()->unique()->values();
             
-            $usersById = \App\Models\User::select('id', 'name', 'username', 'email')
+            $usersById = \App\Models\User::select('id', 'name', 'username')
                 ->whereIn('id', $userIds)
                 ->get()
                 ->keyBy('id');
@@ -937,6 +969,90 @@ class OrderController extends Controller
         }
 
         return response()->json($response, $updated > 0 ? 200 : 422);
+    }
+
+    /**
+     * Массовая отвязка заказов от проекта
+     */
+    public function bulkDetachFromProject(Request $request)
+    {
+        $data = $request->validate([
+            'order_ids' => 'required|array|min:1',
+            'order_ids.*' => 'required|integer|exists:orders,id',
+        ]);
+
+        $orderIds = $data['order_ids'];
+        $user = $request->user();
+        $detached = 0;
+        $errors = [];
+        $projectIds = [];
+
+        foreach ($orderIds as $orderId) {
+            try {
+                $order = Order::find($orderId);
+                
+                if (!$order) {
+                    $errors[] = "Заказ ID $orderId не найден";
+                    continue;
+                }
+
+                // Проверка прав
+                if (Gate::denies('update', $order)) {
+                    $errors[] = "Заказ ID $orderId: нет прав для обновления";
+                    continue;
+                }
+
+                // Сохраняем ID проекта для пересчета цены
+                if ($order->project_id && !in_array($order->project_id, $projectIds)) {
+                    $projectIds[] = $order->project_id;
+                }
+
+                // Отвязываем заказ от проекта
+                $order->project_id = null;
+                $order->save();
+
+                // Инвалидируем кэш
+                CacheService::invalidateOrderCaches($order->id);
+
+                $detached++;
+            } catch (\Exception $e) {
+                $errors[] = "Заказ ID $orderId: {$e->getMessage()}";
+                Log::error("Bulk detach error for Order $orderId", [
+                    'error' => $e->getMessage(),
+                    'trace' => $e->getTraceAsString()
+                ]);
+            }
+        }
+
+        // Пересчитываем цены проектов (только уникальные проекты)
+        $uniqueProjectIds = array_unique($projectIds);
+        foreach ($uniqueProjectIds as $projectId) {
+            try {
+                $project = \App\Models\Project::find($projectId);
+                if ($project) {
+                    $project->recalculateTotalPrice();
+                    // Инвалидируем кэш проекта
+                    CacheService::invalidateWithTags([CacheService::TAG_PROJECTS]);
+                }
+            } catch (\Exception $e) {
+                Log::warning("Failed to recalculate project price", [
+                    'project_id' => $projectId,
+                    'error' => $e->getMessage()
+                ]);
+            }
+        }
+
+        $response = [
+            'message' => "Отвязано заказов: $detached",
+            'detached' => $detached,
+            'total_requested' => count($orderIds)
+        ];
+
+        if (!empty($errors)) {
+            $response['errors'] = $errors;
+        }
+
+        return response()->json($response, $detached > 0 ? 200 : 422);
     }
 
     /**

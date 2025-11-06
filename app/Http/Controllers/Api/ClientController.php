@@ -58,9 +58,12 @@ class ClientController extends Controller
             $perPage = 30;
         }
 
+        // Проверяем, нужно ли принудительно обновить кэш
+        $cacheTime = $request->has('force_refresh') ? 0 : 900;
+        
         // Кэшируем результаты поиска на 15 минут для быстрых ответов
         $cacheKey = 'clients_' . $user->id . '_' . md5($request->fullUrl());
-        $clients = CacheService::rememberWithTags($cacheKey, 900, function () use ($query, $perPage) {
+        $clients = CacheService::rememberWithTags($cacheKey, $cacheTime, function () use ($query, $perPage) {
             return $query->paginate($perPage);
         }, [CacheService::TAG_CLIENTS]);
 

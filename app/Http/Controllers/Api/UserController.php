@@ -30,8 +30,11 @@ class UserController extends Controller
             abort(401, 'Необходима аутентификация');
         }
 
+        // Проверяем, нужно ли принудительно обновить кэш
+        $cacheTime = $request->has('force_refresh') ? 0 : 900;
+        
         $cacheKey = 'users_' . md5($request->fullUrl());
-        $result = CacheService::rememberWithTags($cacheKey, 900, function () use ($request) {
+        $result = CacheService::rememberWithTags($cacheKey, $cacheTime, function () use ($request) {
             // Оптимизация: выбираем только необходимые поля
             $query = User::select('id', 'name', 'username', 'phone', 'image', 'is_active', 'created_at', 'updated_at')
                 ->with(['roles' => function ($q) {

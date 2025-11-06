@@ -176,7 +176,7 @@ class OrderRepository
                         $q->select('id', 'order_id', 'user_id', 'role_type', 'status', 'assigned_by', 'assigned_at', 'started_at', 'completed_at');
                     },
                     'assignments.user' => function ($q) {
-                        $q->select('id', 'name', 'username', 'email');
+                        $q->select('id', 'name', 'username');
                     },
                     'assignments.user.roles' => function ($q) {
                         $q->select('roles.id', 'roles.name', 'roles.display_name');

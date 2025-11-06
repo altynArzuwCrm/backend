@@ -12,7 +12,6 @@ class ProductDTO
     public function __construct(
         public int $id,
         public string $name,
-        public ?string $description,
         public ?bool $is_active,
         public ?string $created_at,
         public ?string $updated_at,
@@ -26,7 +25,6 @@ class ProductDTO
         return new self(
             id: $product->id,
             name: $product->name,
-            description: $product->description,
             is_active: $product->is_active ?? false,
             created_at: $product->created_at ? (is_string($product->created_at) ? $product->created_at : $product->created_at->toISOString()) : null,
             updated_at: $product->updated_at ? (is_string($product->updated_at) ? $product->updated_at : $product->updated_at->toISOString()) : null,
@@ -41,7 +39,6 @@ class ProductDTO
         return [
             'id' => $this->id,
             'name' => $this->name,
-            'description' => $this->description,
             'is_active' => $this->is_active,
             'created_at' => $this->created_at,
             'updated_at' => $this->updated_at,
@@ -62,11 +59,6 @@ class ProductDTO
 
         if (strlen($data['name']) > 255) {
             $errors['name'] = 'Название продукта не может быть длиннее 255 символов';
-        }
-
-        // Валидация описания
-        if (isset($data['description']) && strlen($data['description']) > 1000) {
-            $errors['description'] = 'Описание не может быть длиннее 1000 символов';
         }
 
         return $errors;
