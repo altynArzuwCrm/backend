@@ -652,7 +652,7 @@ class OrderController extends Controller
         // Создаем запись в логе изменений статуса
         \App\Models\OrderStatusLog::create([
             'order_id' => $order->id,
-            'from_status' => $oldStage ? $oldStage->name : null,
+            'from_status' => $oldStage ? $oldStage->name : '',
             'to_status' => $order->stage->name,
             'user_id' => $request->user()->id,
             'changed_at' => now(),
@@ -928,7 +928,7 @@ class OrderController extends Controller
                     // Создаем запись в логе изменений статуса
                     OrderStatusLog::create([
                         'order_id' => $order->id,
-                        'from_status' => $oldStage ? $oldStage->name : null,
+                        'from_status' => $oldStage ? $oldStage->name : '',
                         'to_status' => $newStageName,
                         'user_id' => $user->id,
                         'changed_at' => now(),
