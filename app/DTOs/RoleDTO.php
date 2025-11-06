@@ -22,8 +22,8 @@ class RoleDTO
             display_name: $role->display_name,
             description: $role->description,
             color: $role->color,
-            created_at: $role->created_at?->toISOString(),
-            updated_at: $role->updated_at?->toISOString()
+            created_at: $role->created_at ? (is_string($role->created_at) ? $role->created_at : $role->created_at->toIso8601String()) : null,
+            updated_at: $role->updated_at ? (is_string($role->updated_at) ? $role->updated_at : $role->updated_at->toIso8601String()) : null
         );
     }
 

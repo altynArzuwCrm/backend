@@ -21,6 +21,15 @@ class OrderAssignmentDTO
 
     public static function fromModel($assignment): self
     {
+        // Получаем первую назначенную стадию из коллекции assignedStages
+        $assignedStage = null;
+        if ($assignment->assignedStages && $assignment->assignedStages->isNotEmpty()) {
+            $assignedStage = $assignment->assignedStages->first();
+        } elseif (isset($assignment->assigned_stage) && $assignment->assigned_stage) {
+            // Fallback для обратной совместимости
+            $assignedStage = $assignment->assigned_stage;
+        }
+        
         return new self(
             id: $assignment->id,
             order_id: $assignment->order_id,
@@ -29,10 +38,10 @@ class OrderAssignmentDTO
             stage_id: $assignment->stage_id,
             status: $assignment->status,
             assigned_at: $assignment->assigned_at ? (is_string($assignment->assigned_at) ? $assignment->assigned_at : $assignment->assigned_at->toISOString()) : null,
-            completed_at: $assignment->completed_at,
+            completed_at: $assignment->completed_at ? (is_string($assignment->completed_at) ? $assignment->completed_at : $assignment->completed_at->toISOString()) : null,
             assigned_by: $assignment->assigned_by,
             user: $assignment->user ? UserDTO::fromModel($assignment->user) : null,
-            assigned_stage: $assignment->assigned_stage ? StageDTO::fromModel($assignment->assigned_stage) : null,
+            assigned_stage: $assignedStage ? StageDTO::fromModel($assignedStage) : null,
             assigned_by_user: $assignment->assignedBy ? UserDTO::fromModel($assignment->assignedBy) : null
         );
     }

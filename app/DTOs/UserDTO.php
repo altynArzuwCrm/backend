@@ -9,7 +9,7 @@ class UserDTO
         public string $name,
         public string $username,
         public ?string $phone,
-        public bool $is_active,
+        public ?bool $is_active,
         public ?string $image,
         public ?string $created_at,
         public ?string $updated_at,
@@ -23,7 +23,7 @@ class UserDTO
             name: $user->name,
             username: $user->username,
             phone: $user->phone,
-            is_active: $user->is_active,
+            is_active: $user->is_active ?? false, // Используем false по умолчанию, если null
             image: $user->image,
             created_at: $user->created_at ? (is_string($user->created_at) ? $user->created_at : $user->created_at->toISOString()) : null,
             updated_at: $user->updated_at ? (is_string($user->updated_at) ? $user->updated_at : $user->updated_at->toISOString()) : null,

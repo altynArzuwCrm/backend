@@ -33,8 +33,8 @@ class ClientContactDTO
             type: $contact->type,
             value: $contact->value,
             client_id: $contact->client_id,
-            created_at: $contact->created_at?->toISOString(),
-            updated_at: $contact->updated_at?->toISOString()
+            created_at: $contact->created_at ? (is_string($contact->created_at) ? $contact->created_at : $contact->created_at->toIso8601String()) : null,
+            updated_at: $contact->updated_at ? (is_string($contact->updated_at) ? $contact->updated_at : $contact->updated_at->toIso8601String()) : null
         );
     }
 
