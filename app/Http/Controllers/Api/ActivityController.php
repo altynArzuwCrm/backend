@@ -89,7 +89,8 @@ class ActivityController extends Controller
             });
 
         // Оптимизация: загружаем только необходимые поля
-        $auditEvents = AuditLog::select('id', 'user_id', 'auditable_type', 'auditable_id', 'action', 'model_name', 'created_at')
+        // model_name - это accessor, не колонка БД, поэтому не включаем в select
+        $auditEvents = AuditLog::select('id', 'user_id', 'auditable_type', 'auditable_id', 'action', 'created_at')
             ->with([
                 'user' => function ($q) {
                     $q->select('id', 'name', 'username');
