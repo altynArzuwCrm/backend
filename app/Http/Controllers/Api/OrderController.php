@@ -10,6 +10,7 @@ use App\Models\Stage;
 use App\Repositories\OrderRepository;
 use App\DTOs\OrderDTO;
 use App\Services\CacheService;
+use App\Notifications\BulkOrdersStageChanged;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Log;
@@ -875,9 +876,21 @@ class OrderController extends Controller
         $errors = [];
         $user = $request->user();
 
+        // Предзагружаем список администраторов и менеджеров один раз
+        $adminsAndManagers = \App\Models\User::whereExists(function ($subquery) {
+            $subquery->select(DB::raw(1))
+                ->from('user_roles')
+                ->join('roles', 'user_roles.role_id', '=', 'roles.id')
+                ->whereColumn('user_roles.user_id', 'users.id')
+                ->whereIn('roles.name', ['admin', 'manager']);
+        })->get();
+
+        $notifiedUsers = [];
+        $changedOrders = [];
+
         foreach ($orderIds as $orderId) {
             try {
-                $order = Order::find($orderId);
+                $order = Order::with('stage')->find($orderId);
                 
                 if (!$order) {
                     $errors[] = "Заказ ID $orderId не найден";
@@ -889,6 +902,8 @@ class OrderController extends Controller
                     $errors[] = "Заказ ID $orderId: нет прав для смены статуса";
                     continue;
                 }
+
+                $oldStage = $order->stage;
 
                 // Для completed проверяем неодобренные назначения
                 if ($newStageName === 'completed') {
@@ -925,6 +940,10 @@ class OrderController extends Controller
                     $order->stage_id = $stage->id;
                     $order->save();
 
+                    // Обновляем модель, чтобы подтянуть свежие данные
+                    $order->refresh();
+                    $order->load('stage');
+
                     // Создаем запись в логе изменений статуса
                     OrderStatusLog::create([
                         'order_id' => $order->id,
@@ -942,6 +961,46 @@ class OrderController extends Controller
                         'user_id' => $user->id
                     ]);
                 });
+
+                $order->loadMissing(['stage', 'project']);
+
+                $newStage = $order->stage;
+                $stageChanged = !$oldStage || !$newStage || $oldStage->id !== $newStage->id;
+
+                if ($stageChanged) {
+                    $changedOrders[] = [
+                        'id' => $order->id,
+                        'title' => $order->project?->title ?? 'Заказ #' . $order->id,
+                        'old_stage' => $oldStage ? ($oldStage->display_name ?? $oldStage->name ?? '') : '',
+                        'new_stage' => $newStage ? ($newStage->display_name ?? $newStage->name ?? $newStageName) : ($stage->display_name ?? $newStageName),
+                    ];
+
+                    foreach ($adminsAndManagers as $admin) {
+                        $notifiedUsers[$admin->id] = $admin;
+                    }
+
+                    $stageAssignments = $order->assignments()
+                        ->whereExists(function ($subquery) use ($stage) {
+                            $subquery->select(DB::raw(1))
+                                ->from('order_stage_assignments')
+                                ->whereColumn('order_stage_assignments.order_assignment_id', 'order_assignments.id')
+                                ->where('order_stage_assignments.stage_id', $stage->id);
+                        })
+                        ->select('id', 'order_id', 'user_id', 'role_type', 'status')
+                        ->with([
+                            'user' => function ($q) {
+                                $q->select('id', 'name', 'username', 'display_name', 'fcm_token');
+                            }
+                        ])
+                        ->get();
+
+                    foreach ($stageAssignments as $assignment) {
+                        $assignedUser = $assignment->user;
+                        if ($assignedUser && $assignedUser->id !== $user->id) {
+                            $notifiedUsers[$assignedUser->id] = $assignedUser;
+                        }
+                    }
+                }
 
             } catch (\Exception $e) {
                 $errors[] = "Заказ ID $orderId: {$e->getMessage()}";
@@ -965,6 +1024,27 @@ class OrderController extends Controller
 
         if (!empty($errors)) {
             $response['errors'] = $errors;
+        }
+
+        if (!empty($changedOrders) && !empty($notifiedUsers)) {
+            $notification = new \App\Notifications\BulkOrdersStageChanged(
+                $changedOrders,
+                $stage->name,
+                $stage->display_name ?? $stage->name,
+                $user
+            );
+
+            foreach ($notifiedUsers as $notifiedUser) {
+                try {
+                    $notifiedUser->notify($notification);
+                } catch (\Exception $e) {
+                    Log::error('Failed to send bulk stage change notification', [
+                        'user_id' => $notifiedUser->id,
+                        'error' => $e->getMessage(),
+                        'trace' => $e->getTraceAsString()
+                    ]);
+                }
+            }
         }
 
         return response()->json($response, $updated > 0 ? 200 : 422);
