@@ -3,14 +3,12 @@
 namespace App\Notifications;
 
 use App\Models\Order;
-use Illuminate\Bus\Queueable;
 use Illuminate\Notifications\Notification;
 use Illuminate\Notifications\Messages\BroadcastMessage;
 use Illuminate\Notifications\Messages\DatabaseMessage;
 
 class OrderAssigned extends Notification
 {
-    use Queueable;
 
     public $order;
     public $actionUser;
@@ -32,6 +30,16 @@ class OrderAssigned extends Notification
         // Добавляем FCM канал, если у пользователя есть FCM токен
         if ($notifiable->fcm_token) {
             $channels[] = 'fcm';
+            \Illuminate\Support\Facades\Log::info('OrderAssigned: Adding FCM channel', [
+                'user_id' => $notifiable->id,
+                'username' => $notifiable->username ?? 'unknown',
+                'fcm_token_exists' => !empty($notifiable->fcm_token)
+            ]);
+        } else {
+            \Illuminate\Support\Facades\Log::warning('OrderAssigned: User has no FCM token, skipping FCM channel', [
+                'user_id' => $notifiable->id,
+                'username' => $notifiable->username ?? 'unknown'
+            ]);
         }
 
         return $channels;

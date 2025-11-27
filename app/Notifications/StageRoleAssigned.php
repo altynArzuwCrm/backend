@@ -4,12 +4,10 @@ namespace App\Notifications;
 
 use App\Models\Order;
 use App\Models\Stage;
-use Illuminate\Bus\Queueable;
 use Illuminate\Notifications\Notification;
 
 class StageRoleAssigned extends Notification
 {
-    use Queueable;
 
     public $order;
     public $stage;
@@ -31,6 +29,16 @@ class StageRoleAssigned extends Notification
         // Добавляем FCM канал, если у пользователя есть FCM токен
         if ($notifiable->fcm_token) {
             $channels[] = 'fcm';
+            \Illuminate\Support\Facades\Log::info('StageRoleAssigned: Adding FCM channel', [
+                'user_id' => $notifiable->id,
+                'username' => $notifiable->username ?? 'unknown',
+                'order_id' => $this->order->id
+            ]);
+        } else {
+            \Illuminate\Support\Facades\Log::warning('StageRoleAssigned: User has no FCM token, skipping FCM channel', [
+                'user_id' => $notifiable->id,
+                'username' => $notifiable->username ?? 'unknown'
+            ]);
         }
         
         return $channels;

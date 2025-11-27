@@ -150,7 +150,7 @@ class ProjectController extends Controller
                 })
                 ->unique()
                 ->values();
-            $usersById = \App\Models\User::whereIn('id', $allUserIds)->get()->keyBy('id');
+            $usersById = \App\Models\User::select('id', 'name', 'username', 'fcm_token')->whereIn('id', $allUserIds)->get()->keyBy('id');
 
             $orders = [];
             foreach ($request->orders as $orderData) {

@@ -238,7 +238,7 @@ class OrderController extends Controller
             $userIds = collect($data['assignments'])->pluck('user_id')->unique()->values();
             $stageIds = collect($data['assignments'])->pluck('stage_id')->filter()->unique()->values();
             
-            $usersById = \App\Models\User::select('id', 'name', 'username')
+            $usersById = \App\Models\User::select('id', 'name', 'username', 'fcm_token')
                 ->whereIn('id', $userIds)
                 ->get()
                 ->keyBy('id');
@@ -490,7 +490,7 @@ class OrderController extends Controller
             $userIds = collect($data['assignments'])->pluck('user_id')->unique()->values();
             $stageIds = collect($data['assignments'])->pluck('stage_id')->filter()->unique()->values();
             
-            $usersById = \App\Models\User::select('id', 'name', 'username')
+            $usersById = \App\Models\User::select('id', 'name', 'username', 'fcm_token')
                 ->whereIn('id', $userIds)
                 ->get()
                 ->keyBy('id');
@@ -666,7 +666,7 @@ class OrderController extends Controller
                 ->join('roles', 'user_roles.role_id', '=', 'roles.id')
                 ->whereColumn('user_roles.user_id', 'users.id')
                 ->whereIn('roles.name', ['admin', 'manager']);
-        })->get();
+        })->select('id', 'name', 'username', 'fcm_token')->get();
 
         foreach ($adminsAndManagers as $admin) {
             $admin->notify(new \App\Notifications\OrderStageChanged($order, $oldStage, $order->stage, $request->user()));
@@ -684,7 +684,7 @@ class OrderController extends Controller
             ->select('id', 'order_id', 'user_id', 'role_type', 'status')
             ->with([
                 'user' => function ($q) {
-                    $q->select('id', 'name', 'username');
+                    $q->select('id', 'name', 'username', 'fcm_token');
                 },
                 'orderStageAssignments' => function ($q) {
                     $q->select('id', 'order_assignment_id', 'stage_id', 'is_assigned');

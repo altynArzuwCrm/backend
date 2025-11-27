@@ -46,8 +46,22 @@ class FCMService
      */
     public function sendToUser($fcmToken, $title, $body, $data = [])
     {
-        if (!$fcmToken || !$this->accessToken) {
+        if (!$fcmToken) {
+            Log::warning('FCM: FCM token is empty', ['title' => $title]);
             return false;
+        }
+
+        // Получаем access token, если его нет или истек
+        if (!$this->accessToken) {
+            Log::info('FCM: Access token is null, trying to get new one');
+            $this->accessToken = $this->getAccessToken();
+            if (!$this->accessToken) {
+                Log::error('FCM: Failed to get access token for sending notification', [
+                    'title' => $title,
+                    'fcm_token_length' => strlen($fcmToken)
+                ]);
+                return false;
+            }
         }
 
         $projectId = config('services.fcm.project_id');
@@ -179,6 +193,11 @@ class FCMService
             if ($response->successful()) {
                 $result = $response->json();
                 // Уведомление FCM успешно отправлено
+                Log::info('FCM: Notification sent successfully to FCM API', [
+                    'project_id' => $projectId,
+                    'token_length' => strlen($payload['message']['token']),
+                    'response' => $result
+                ]);
                 return true;
             } else {
                 Log::error('FCM notification failed', [

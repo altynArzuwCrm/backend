@@ -3,12 +3,10 @@
 namespace App\Notifications;
 
 use App\Models\OrderAssignment;
-use Illuminate\Bus\Queueable;
 use Illuminate\Notifications\Notification;
 
 class AssignmentRemoved extends Notification
 {
-    use Queueable;
 
     public $assignment;
     public $actionUser;

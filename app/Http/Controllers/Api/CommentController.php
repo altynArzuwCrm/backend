@@ -118,7 +118,7 @@ class CommentController extends Controller
                                 ->where('roles.name', $roleType);
                         })
                         ->where('status', '!=', 'cancelled')
-                        ->with('user:id,name,username')
+                        ->with('user:id,name,username,fcm_token')
                         ->get()
                         ->pluck('user')
                         ->filter();
@@ -136,7 +136,7 @@ class CommentController extends Controller
                         ->join('roles', 'user_roles.role_id', '=', 'roles.id')
                         ->whereColumn('user_roles.user_id', 'users.id')
                         ->whereIn('roles.name', ['admin', 'manager']);
-                })->select('id', 'name', 'username')->get();
+                })->select('id', 'name', 'username', 'fcm_token')->get();
                 foreach ($adminsAndManagers as $admin) {
                     if ($admin->id !== Auth::id() && !in_array($admin->id, $notifiedUserIds)) {
                         $admin->notify(new \App\Notifications\OrderCommented($order, $comment, Auth::user()));

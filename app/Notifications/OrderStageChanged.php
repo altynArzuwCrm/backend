@@ -4,12 +4,10 @@ namespace App\Notifications;
 
 use App\Models\Order;
 use App\Models\Stage;
-use Illuminate\Bus\Queueable;
 use Illuminate\Notifications\Notification;
 
 class OrderStageChanged extends Notification
 {
-    use Queueable;
 
     public $order;
     public $oldStage;
@@ -30,9 +28,31 @@ class OrderStageChanged extends Notification
     {
         $channels = ['database'];
         
-        // Добавляем FCM канал, если у пользователя есть FCM токен
-        if ($notifiable->fcm_token) {
+        // Push уведомления о смене стадии отправляются ТОЛЬКО менеджерам и администраторам
+        // Если есть roleType - это назначенный сотрудник, ему push НЕ отправляем
+        // Добавляем FCM канал только если нет roleType (т.е. для менеджеров/администраторов) и есть FCM токен
+        if (!$this->roleType && $notifiable->fcm_token) {
             $channels[] = 'fcm';
+            \Illuminate\Support\Facades\Log::info('OrderStageChanged: Adding FCM channel for manager/admin', [
+                'user_id' => $notifiable->id,
+                'username' => $notifiable->username ?? 'unknown',
+                'order_id' => $this->order->id,
+                'is_assigned_employee' => false
+            ]);
+        } else {
+            if ($this->roleType) {
+                \Illuminate\Support\Facades\Log::info('OrderStageChanged: Skipping FCM channel for assigned employee (push not sent)', [
+                    'user_id' => $notifiable->id,
+                    'username' => $notifiable->username ?? 'unknown',
+                    'order_id' => $this->order->id,
+                    'role_type' => $this->roleType
+                ]);
+            } else {
+                \Illuminate\Support\Facades\Log::warning('OrderStageChanged: User has no FCM token, skipping FCM channel', [
+                    'user_id' => $notifiable->id,
+                    'username' => $notifiable->username ?? 'unknown'
+                ]);
+            }
         }
         
         return $channels;
