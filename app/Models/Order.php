@@ -359,7 +359,7 @@ class Order extends Model
 
             OrderStatusLog::create([
                 'order_id' => $this->id,
-                'from_status' => $oldStageName,
+                'from_status' => $oldStageName ?? '',
                 'to_status' => $nextStage,
                 'user_id' => \Illuminate\Support\Facades\Auth::id() ?? 1,
                 'changed_at' => now(),
