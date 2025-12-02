@@ -15,3 +15,10 @@ Schedule::command('notifications:end-of-day')
     ->weekdays() // Только с понедельника по пятницу
     ->withoutOverlapping()
     ->runInBackground();
+
+Schedule::command('tasks:check-unapproved')
+    ->timezone('Asia/Ashgabat')
+    ->dailyAt('17:50')
+    ->weekdays()
+    ->withoutOverlapping()
+    ->runInBackground();

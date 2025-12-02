@@ -40,4 +40,9 @@ return [
         'service_account_path' => env('FCM_SERVICE_ACCOUNT_PATH', 'firebase-service-account.json'),
     ],
 
+    'sms' => [
+        'url' => env('SMS_API_URL'),
+        'key' => env('SMS_API_KEY'),
+    ],
+
 ];
