@@ -20,6 +20,7 @@ class OrderDTO
         public ?int $quantity,
         public ?string $deadline,
         public ?float $price,
+        public ?float $payment_amount,
         public string $stage,
         public ?string $status,
         public ?string $reason,
@@ -47,6 +48,7 @@ class OrderDTO
             quantity: $order->quantity,
             deadline: $order->deadline ? (is_string($order->deadline) ? $order->deadline : $order->deadline->toISOString()) : null,
             price: $order->price,
+            payment_amount: $order->payment_amount ?? null,
             // Always return stage as a plain string (stage name)
             stage: is_string($order->stage) ? $order->stage : ($order->stage?->name ?? 'draft'),
             status: $order->status,
@@ -76,6 +78,7 @@ class OrderDTO
             'quantity' => $this->quantity,
             'deadline' => $this->deadline,
             'price' => $this->price,
+            'payment_amount' => $this->payment_amount,
             'stage' => $this->stage,
             'status' => $this->status,
             'reason' => $this->reason,

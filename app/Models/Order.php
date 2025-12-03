@@ -18,6 +18,7 @@ class Order extends Model
         'quantity',
         'deadline',
         'price',
+        'payment_amount',
         'work_type',
         'reason',
         'reason_status',
@@ -28,6 +29,7 @@ class Order extends Model
     protected $casts = [
         'deadline' => 'datetime',
         'price' => 'decimal:2',
+        'payment_amount' => 'decimal:2',
         'archived_at' => 'datetime',
         'is_archived' => 'boolean'
     ];
