@@ -16,6 +16,7 @@ use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Validation\ValidationException;
 
 class OrderController extends Controller
 {
@@ -84,13 +85,26 @@ class OrderController extends Controller
             'deadline' => 'nullable|date',
             'price' => 'nullable|numeric',
             'assignments' => 'sometimes|array',
-            'assignments.*.user_id' => 'required|exists:users,id',
-            'assignments.*.role_type' => 'required|string',
+            'assignments.*.user_id' => 'required_with:assignments|exists:users,id',
+            'assignments.*.role_type' => 'required_with:assignments|string',
             'assignments.*.stage_id' => 'sometimes|exists:stages,id',
             'stages' => 'sometimes|array',
             'stages.*' => 'exists:stages,id',
             'is_bulk' => 'sometimes|boolean',
         ]);
+
+        // Нормализуем пустые значения
+        if (isset($data['project_id']) && ($data['project_id'] === '' || $data['project_id'] === 0)) {
+            $data['project_id'] = null;
+        }
+        // product_id не нормализуем в null, так как он обязателен в БД
+        // Если product_id пустой, валидация должна отклонить запрос
+        if (isset($data['assignments']) && is_array($data['assignments']) && empty($data['assignments'])) {
+            unset($data['assignments']); // Удаляем пустой массив назначений
+        }
+        if (isset($data['stages']) && is_array($data['stages']) && empty($data['stages'])) {
+            unset($data['stages']); // Удаляем пустой массив стадий (но заказ все равно создастся)
+        }
 
         $product = null;
         if (isset($data['product_id'])) {
@@ -148,7 +162,7 @@ class OrderController extends Controller
         }
 
         // Если не нашли стадию с назначениями, используем историческую логику
-        if (!$initialStage) {
+        if (!$initialStage && isset($data['product_id']) && !empty($data['product_id'])) {
             // Берем первую стадию с order_stage_assignments по порядку
             $stagesWithAssignments = DB::table('order_stage_assignments')
                 ->join('order_assignments', 'order_stage_assignments.order_assignment_id', '=', 'order_assignments.id')
@@ -160,8 +174,6 @@ class OrderController extends Controller
                 ->distinct()
                 ->orderBy('stages.order')
                 ->get();
-
-
 
             $initialStage = $stagesWithAssignments->first();
         }
@@ -191,6 +203,23 @@ class OrderController extends Controller
                 $data['stage_id'] = $stage->id;
             } else {
                 Log::error('Stage not found', ['stage_name' => $data['stage']]);
+                // Если стадия не найдена, пытаемся найти draft как fallback
+                $draftStage = \App\Models\Stage::findByName('draft');
+                if ($draftStage) {
+                    $data['stage_id'] = $draftStage->id;
+                    $data['stage'] = 'draft';
+                }
+            }
+        }
+        
+        // Если stage_id все еще не установлен, пытаемся найти draft
+        if (!isset($data['stage_id']) || empty($data['stage_id'])) {
+            $draftStage = \App\Models\Stage::findByName('draft');
+            if ($draftStage) {
+                $data['stage_id'] = $draftStage->id;
+                $data['stage'] = 'draft';
+            } else {
+                Log::error('Draft stage not found in database');
             }
         }
 
@@ -201,19 +230,189 @@ class OrderController extends Controller
                     'message' => 'Проект обязателен для массового заказа'
                 ], 422);
             }
-
-            // Если указано название проекта, создаем новый проект
-            if (isset($data['project_title']) && !isset($data['project_id'])) {
-                $project = \App\Models\Project::create([
-                    'title' => $data['project_title'],
-                    'client_id' => $data['client_id'],
-                ]);
-                $data['project_id'] = $project->id;
-            }
         }
 
+        // Используем транзакцию для обеспечения целостности данных
         try {
-            $order = Order::create($data);
+            $order = DB::transaction(function () use ($data, $request, $initialStage) {
+                // Если указано название проекта, создаем новый проект в транзакции
+                if (isset($data['is_bulk']) && $data['is_bulk'] && isset($data['project_title']) && !isset($data['project_id'])) {
+                    $project = \App\Models\Project::create([
+                        'title' => $data['project_title'],
+                        'client_id' => $data['client_id'],
+                    ]);
+                    $data['project_id'] = $project->id;
+                }
+
+                // Проверяем обязательные поля перед созданием
+                if (!isset($data['client_id'])) {
+                    throw new \Exception('Клиент обязателен для создания заказа');
+                }
+
+                // Проверяем product_id (в БД он обязателен для всех заказов)
+                if (!isset($data['product_id']) || empty($data['product_id'])) {
+                    throw new \Exception('Продукт обязателен для создания заказа');
+                }
+
+                // Проверяем quantity (должно быть минимум 1)
+                if (!isset($data['quantity']) || $data['quantity'] < 1) {
+                    $data['quantity'] = 1; // Устанавливаем значение по умолчанию
+                }
+
+                // Проверяем, что stage_id установлен
+                if (!isset($data['stage_id'])) {
+                    Log::warning('Stage ID not set before order creation', [
+                        'data' => $data,
+                        'initial_stage' => $initialStage?->name ?? 'not found'
+                    ]);
+                    // Пытаемся найти стадию draft как fallback
+                    $draftStage = \App\Models\Stage::findByName('draft');
+                    if ($draftStage) {
+                        $data['stage_id'] = $draftStage->id;
+                    } else {
+                        throw new \Exception('Не удалось определить начальную стадию заказа');
+                    }
+                }
+
+                // Создаем заказ
+                $order = Order::create($data);
+
+                // Обрабатываем назначения, если они есть
+                if (isset($data['assignments']) && is_array($data['assignments']) && !empty($data['assignments'])) {
+                    // Получаем список выбранных стадий
+                    $selectedStages = isset($data['stages']) ? $data['stages'] : [];
+
+                    // Предзагружаем пользователей и стадии для избежания N+1
+                    $userIds = collect($data['assignments'])->pluck('user_id')->unique()->values();
+                    $stageIds = collect($data['assignments'])->pluck('stage_id')->filter()->unique()->values();
+                    
+                    // Проверяем, что все пользователи существуют
+                    $existingUserIds = \App\Models\User::whereIn('id', $userIds)->pluck('id')->toArray();
+                    $missingUserIds = array_diff($userIds->toArray(), $existingUserIds);
+                    if (!empty($missingUserIds)) {
+                        throw new \Exception('Один или несколько пользователей не найдены: ' . implode(', ', $missingUserIds));
+                    }
+
+                    $usersById = \App\Models\User::select('id', 'name', 'username', 'fcm_token')
+                        ->whereIn('id', $userIds)
+                        ->get()
+                        ->keyBy('id');
+                    
+                    // Проверяем, что все стадии существуют (если указаны)
+                    if ($stageIds->isNotEmpty()) {
+                        $existingStageIds = \App\Models\Stage::whereIn('id', $stageIds)->pluck('id')->toArray();
+                        $missingStageIds = array_diff($stageIds->toArray(), $existingStageIds);
+                        if (!empty($missingStageIds)) {
+                            throw new \Exception('Одна или несколько стадий не найдены: ' . implode(', ', $missingStageIds));
+                        }
+                    }
+
+                    $stagesById = \App\Models\Stage::select('id', 'name')
+                        ->whereIn('id', $stageIds)
+                        ->get()
+                        ->keyBy('id');
+
+                    // Проверяем на дубликаты назначений (один пользователь на одну роль на одну стадию)
+                    $assignmentKeys = [];
+                    foreach ($data['assignments'] as $assignmentData) {
+                        // Проверяем, что назначение создается только для выбранных стадий
+                        if (isset($assignmentData['stage_id']) && !empty($selectedStages)) {
+                            if (!in_array($assignmentData['stage_id'], $selectedStages)) {
+                                continue;
+                            }
+                        }
+
+                        // Проверяем обязательные поля назначения
+                        if (!isset($assignmentData['user_id']) || !isset($assignmentData['role_type'])) {
+                            Log::warning('Assignment missing required fields', ['assignment' => $assignmentData]);
+                            continue;
+                        }
+
+                        // Проверяем на дубликаты
+                        $key = $assignmentData['user_id'] . '_' . $assignmentData['role_type'] . '_' . ($assignmentData['stage_id'] ?? 'null');
+                        if (in_array($key, $assignmentKeys)) {
+                            Log::warning('Duplicate assignment detected', ['assignment' => $assignmentData]);
+                            continue; // Пропускаем дубликаты
+                        }
+                        $assignmentKeys[] = $key;
+
+                        // Проверяем, что пользователь существует
+                        if (!$usersById->has($assignmentData['user_id'])) {
+                            Log::warning('User not found for assignment', ['user_id' => $assignmentData['user_id']]);
+                            continue;
+                        }
+
+                        $assignment = \App\Models\OrderAssignment::create([
+                            'order_id' => $order->id,
+                            'user_id' => $assignmentData['user_id'],
+                            'role_type' => $assignmentData['role_type'],
+                            'assigned_by' => $request->user()->id,
+                            'status' => 'pending',
+                        ]);
+
+                        // Если указан stage_id, назначаем на конкретную стадию
+                        if (isset($assignmentData['stage_id'])) {
+                            $stage = $stagesById->get($assignmentData['stage_id']);
+                            if ($stage) {
+                                $assignment->assignToStage($stage->name);
+                            }
+                        }
+                    }
+                }
+
+                return $order;
+            });
+
+            // Оптимизация: точечная инвалидация кэша вместо полной очистки
+            CacheService::invalidateOrderCaches($order->id);
+
+            // Отправка уведомлений изолирована от создания заказа
+            // Если уведомления не отправятся, заказ все равно будет создан
+            if (isset($data['assignments']) && is_array($data['assignments']) && !empty($data['assignments'])) {
+                try {
+                    $userIds = collect($data['assignments'])->pluck('user_id')->unique()->values();
+                    $usersById = \App\Models\User::select('id', 'name', 'username', 'fcm_token')
+                        ->whereIn('id', $userIds)
+                        ->get()
+                        ->keyBy('id');
+
+                    foreach ($data['assignments'] as $assignmentData) {
+                        if (!isset($assignmentData['user_id'])) {
+                            continue;
+                        }
+
+                        $assignedUser = $usersById->get($assignmentData['user_id']);
+                        if ($assignedUser) {
+                            try {
+                                $assignedUser->notify(new \App\Notifications\OrderAssigned(
+                                    $order,
+                                    $request->user(),
+                                    $assignmentData['role_type'] ?? 'unknown',
+                                    $order->stage ? $order->stage->name : null
+                                ));
+                            } catch (\Exception $e) {
+                                Log::warning('Failed to send OrderAssigned notification', [
+                                    'user_id' => $assignedUser->id,
+                                    'order_id' => $order->id,
+                                    'error' => $e->getMessage()
+                                ]);
+                            }
+                        }
+                    }
+                } catch (\Exception $e) {
+                    Log::error('Error sending notifications for order', [
+                        'order_id' => $order->id,
+                        'error' => $e->getMessage(),
+                        'trace' => $e->getTraceAsString()
+                    ]);
+                }
+            }
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            // Валидационные ошибки возвращаем как есть
+            return response()->json([
+                'message' => 'Ошибка валидации данных',
+                'errors' => $e->errors()
+            ], 422);
         } catch (\Exception $e) {
             Log::error('Error creating order', [
                 'error' => $e->getMessage(),
@@ -221,79 +420,20 @@ class OrderController extends Controller
                 'data' => $data
             ]);
             return response()->json([
-                'message' => 'Ошибка при создании заказа',
+                'message' => 'Ошибка при создании заказа: ' . $e->getMessage(),
                 'error' => config('app.debug') ? $e->getMessage() : null
             ], 500);
         }
 
-        // Оптимизация: точечная инвалидация кэша вместо полной очистки
-        CacheService::invalidateOrderCaches($order->id);
-
-        // Обрабатываем назначения, если они есть
-        if (isset($data['assignments']) && is_array($data['assignments'])) {
-            // Получаем список выбранных стадий
-            $selectedStages = isset($data['stages']) ? $data['stages'] : [];
-
-            // Предзагружаем пользователей и стадии для избежания N+1
-            // Оптимизация: загружаем только нужные поля
-            $userIds = collect($data['assignments'])->pluck('user_id')->unique()->values();
-            $stageIds = collect($data['assignments'])->pluck('stage_id')->filter()->unique()->values();
-            
-            $usersById = \App\Models\User::select('id', 'name', 'username', 'fcm_token')
-                ->whereIn('id', $userIds)
-                ->get()
-                ->keyBy('id');
-            $stagesById = \App\Models\Stage::select('id', 'name')
-                ->whereIn('id', $stageIds)
-                ->get()
-                ->keyBy('id');
-
-            foreach ($data['assignments'] as $assignmentData) {
-                // Проверяем, что назначение создается только для выбранных стадий
-                if (isset($assignmentData['stage_id']) && !empty($selectedStages)) {
-                    if (!in_array($assignmentData['stage_id'], $selectedStages)) {
-                        // Пропускаем назначения для невыбранных стадий
-                        continue; // Пропускаем назначения для невыбранных стадий
-                    }
-                }
-
-                $assignment = \App\Models\OrderAssignment::create([
-                    'order_id' => $order->id,
-                    'user_id' => $assignmentData['user_id'],
-                    'role_type' => $assignmentData['role_type'],
-                    'assigned_by' => $request->user()->id,
-                    'status' => 'pending',
-                ]);
-
-                // Если указан stage_id, назначаем на конкретную стадию
-                if (isset($assignmentData['stage_id'])) {
-                    $stage = $stagesById->get($assignmentData['stage_id']);
-                    if ($stage) {
-                        $assignment->assignToStage($stage->name);
-                    }
-                }
-
-                // Отправляем уведомление назначенному пользователю
-                $assignedUser = $usersById->get($assignmentData['user_id']);
-                if ($assignedUser) {
-                    try {
-                        $assignedUser->notify(new \App\Notifications\OrderAssigned(
-                            $order,
-                            $request->user(),
-                            $assignmentData['role_type'],
-                            $order->stage ? $order->stage->name : null
-                        ));
-                        // Уведомление отправлено успешно
-                    } catch (\Exception $e) {
-                        \Log::error('Failed to send OrderAssigned notification', [
-                            'user_id' => $assignedUser->id,
-                            'order_id' => $order->id,
-                            'error' => $e->getMessage()
-                        ]);
-                    }
-                }
-            }
+        // Проверяем, что заказ был создан
+        if (!$order || !isset($order->id)) {
+            Log::error('Order was not created successfully', ['data' => $data]);
+            return response()->json([
+                'message' => 'Ошибка: заказ не был создан'
+            ], 500);
         }
+
+        $orderId = $order->id;
 
         // Оптимизация: загружаем только необходимые поля для ответа
         $order = Order::select('id', 'client_id', 'project_id', 'product_id', 'stage_id', 
@@ -318,7 +458,15 @@ class OrderController extends Controller
                     $q->select('id', 'name', 'display_name', 'color');
                 }
             ])
-            ->find($order->id);
+            ->find($orderId);
+            
+        if (!$order) {
+            Log::error('Order not found after creation', ['order_id' => $orderId]);
+            return response()->json([
+                'message' => 'Ошибка: заказ не найден после создания'
+            ], 500);
+        }
+            
         return response()->json($order, 201);
     }
 
