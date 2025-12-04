@@ -9,6 +9,9 @@ use App\Services\CacheService;
 class Order extends Model
 {
     use HasFactory;
+    
+    // Флаг для предотвращения рекурсии при переходе стадий
+    protected static $isTransitioning = false;
 
     protected $fillable = [
         'client_id',
@@ -56,6 +59,11 @@ class Order extends Model
                         $order->stage_id = $firstStage->id;
                     }
                 }
+            }
+            
+            // Устанавливаем payment_amount по умолчанию, если не установлен
+            if (!isset($order->payment_amount) || $order->payment_amount === null) {
+                $order->payment_amount = 0;
             }
         });
 
@@ -113,6 +121,40 @@ class Order extends Model
             } catch (\Exception $e) {
                 // Игнорируем ошибки очистки кэша
                 \Log::warning('Failed to invalidate cache', ['error' => $e->getMessage()]);
+            }
+        });
+        
+        static::saved(function ($order) {
+            // Проверяем переход с final на completed при полной оплате
+            // Используем saved событие, чтобы избежать рекурсии при обновлении
+            try {
+                // Пропускаем, если уже идет переход стадии (защита от рекурсии)
+                if (static::$isTransitioning) {
+                    return;
+                }
+                
+                // Проверяем, что payment_amount был изменен в предыдущем обновлении
+                if ($order->wasChanged('payment_amount')) {
+                    // Перезагружаем отношения, чтобы получить актуальную стадию
+                    $order->load('stage');
+                    $currentStageName = is_string($order->stage) ? $order->stage : $order->stage->name ?? null;
+                    
+                    // Если заказ на стадии final и стал полностью оплачен - переходим на completed
+                    if ($currentStageName === 'final' && $order->isFullyPaid() && $order->isCurrentStageApproved()) {
+                        static::$isTransitioning = true;
+                        try {
+                            $order->moveToNextStage();
+                        } finally {
+                            static::$isTransitioning = false;
+                        }
+                    }
+                }
+            } catch (\Exception $e) {
+                static::$isTransitioning = false;
+                \Log::warning('Error checking final to completed transition', [
+                    'order_id' => $order->id,
+                    'error' => $e->getMessage()
+                ]);
             }
         });
         static::deleted(function ($order) {
@@ -258,9 +300,30 @@ class Order extends Model
             $nextStage = $nextStage->getNextStage();
         }
 
-        // Если не нашли стадию с неодобренными назначениями - возвращаем completed
-        $completedStage = Stage::findByName('completed');
-        return $completedStage ? $completedStage->name : 'completed';
+        // Если не нашли стадию с неодобренными назначениями - проверяем оплату
+        // Если все назначения одобрены и оплата полностью оплачена - возвращаем completed
+        // Если все назначения одобрены, но оплата не полная - возвращаем final
+        if ($this->isFullyPaid()) {
+            $completedStage = Stage::findByName('completed');
+            return $completedStage ? $completedStage->name : 'completed';
+        } else {
+            $finalStage = Stage::findByName('final');
+            return $finalStage ? $finalStage->name : 'final';
+        }
+    }
+
+    /**
+     * Проверяет, полностью ли оплачен заказ
+     */
+    public function isFullyPaid()
+    {
+        // Если цена не указана, считаем заказ оплаченным
+        if (!$this->price || $this->price <= 0) {
+            return true;
+        }
+
+        // Если сумма оплаты равна или больше цены - заказ полностью оплачен
+        return $this->payment_amount >= $this->price;
     }
 
     public function isCurrentStageApproved()
@@ -315,28 +378,40 @@ class Order extends Model
         $currentStageName = is_string($this->stage) ? $this->stage : $this->stage->name ?? null;
 
         if ($nextStage && $nextStage !== $currentStageName) {
+            // Проверяем условия перехода на completed
             if ($nextStage === 'completed') {
-                $product = $this->product;
+                // Дополнительная проверка: заказ должен быть полностью оплачен
+                if (!$this->isFullyPaid()) {
+                    // Если не оплачен, переходим на final вместо completed
+                    $finalStage = Stage::findByName('final');
+                    if ($finalStage) {
+                        $nextStage = 'final';
+                    } else {
+                        return false; // Не можем перейти на completed без оплаты
+                    }
+                } else {
+                    $product = $this->product;
 
-                // Динамическая проверка ролей для текущей стадии
-                $currentStageModel = Stage::findByName($currentStageName);
-                if ($currentStageModel && $product) {
-                    $stageRoles = $currentStageModel->roles;
+                    // Динамическая проверка ролей для текущей стадии
+                    $currentStageModel = Stage::findByName($currentStageName);
+                    if ($currentStageModel && $product) {
+                        $stageRoles = $currentStageModel->roles;
 
-                    foreach ($stageRoles as $role) {
-                        // Оптимизация: используем whereExists вместо whereHas
-                        $assignments = $this->assignments()
-                            ->whereExists(function ($subquery) use ($role) {
-                                $subquery->select(\Illuminate\Support\Facades\DB::raw(1))
-                                    ->from('user_roles')
-                                    ->join('roles', 'user_roles.role_id', '=', 'roles.id')
-                                    ->whereColumn('user_roles.user_id', 'order_assignments.user_id')
-                                    ->where('roles.name', $role->name);
-                            })
-                            ->get();
+                        foreach ($stageRoles as $role) {
+                            // Оптимизация: используем whereExists вместо whereHas
+                            $assignments = $this->assignments()
+                                ->whereExists(function ($subquery) use ($role) {
+                                    $subquery->select(\Illuminate\Support\Facades\DB::raw(1))
+                                        ->from('user_roles')
+                                        ->join('roles', 'user_roles.role_id', '=', 'roles.id')
+                                        ->whereColumn('user_roles.user_id', 'order_assignments.user_id')
+                                        ->where('roles.name', $role->name);
+                                })
+                                ->get();
 
-                        if ($assignments->isNotEmpty() && !$assignments->every(fn($a) => $a->status === 'approved')) {
-                            return false;
+                            if ($assignments->isNotEmpty() && !$assignments->every(fn($a) => $a->status === 'approved')) {
+                                return false;
+                            }
                         }
                     }
                 }
@@ -351,9 +426,11 @@ class Order extends Model
                 $this->save();
             }
 
-            if ($nextStage === 'completed' || $nextStage === 'cancelled') {
+            // Архивируем только при переходе на completed или cancelled
+        if ($nextStage === 'completed' || $nextStage === 'cancelled') {
                 $this->archive();
             } else {
+                // Для всех других стадий (включая final) снимаем архив
                 $this->is_archived = false;
                 $this->archived_at = null;
                 $this->save();

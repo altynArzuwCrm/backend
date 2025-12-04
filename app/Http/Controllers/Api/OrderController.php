@@ -106,6 +106,14 @@ class OrderController extends Controller
         if (isset($data['stages']) && is_array($data['stages']) && empty($data['stages'])) {
             unset($data['stages']); // Удаляем пустой массив стадий (но заказ все равно создастся)
         }
+        
+        // Нормализуем payment_amount: пустые значения и null превращаем в 0
+        if (!isset($data['payment_amount']) || $data['payment_amount'] === null || $data['payment_amount'] === '' || $data['payment_amount'] === 'null') {
+            $data['payment_amount'] = 0;
+        } else {
+            // Преобразуем в число, если это строка
+            $data['payment_amount'] = is_numeric($data['payment_amount']) ? (float)$data['payment_amount'] : 0;
+        }
 
         $product = null;
         if (isset($data['product_id'])) {
@@ -258,6 +266,11 @@ class OrderController extends Controller
                 // Проверяем quantity (должно быть минимум 1)
                 if (!isset($data['quantity']) || $data['quantity'] < 1) {
                     $data['quantity'] = 1; // Устанавливаем значение по умолчанию
+                }
+
+                // Убеждаемся, что payment_amount установлен (должно быть уже нормализовано выше, но на всякий случай)
+                if (!isset($data['payment_amount']) || $data['payment_amount'] === null) {
+                    $data['payment_amount'] = 0;
                 }
 
                 // Проверяем, что stage_id установлен
