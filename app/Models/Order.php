@@ -22,6 +22,7 @@ class Order extends Model
         'deadline',
         'price',
         'payment_amount',
+        'payment_type',
         'work_type',
         'reason',
         'reason_status',

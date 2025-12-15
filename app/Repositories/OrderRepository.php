@@ -30,7 +30,7 @@ class OrderRepository
 
         // Оптимизация: выбираем только необходимые поля для уменьшения размера данных
         $query = Order::select('id', 'client_id', 'project_id', 'product_id', 'stage_id', 
-                               'quantity', 'deadline', 'price', 'payment_amount', 'is_archived', 'created_at', 'updated_at')
+                               'quantity', 'deadline', 'price', 'payment_amount', 'payment_type', 'is_archived', 'created_at', 'updated_at')
             ->with([
                 'project' => function ($q) {
                     $q->select('id', 'title');
@@ -162,6 +162,7 @@ class OrderRepository
                         'deadline' => $order->deadline?->toDateTimeString(),
                         'price' => $order->price,
                         'payment_amount' => $order->payment_amount,
+                        'payment_type' => $order->payment_type,
                         'is_archived' => $order->is_archived,
                         'created_at' => $order->created_at?->toDateTimeString(),
                         'updated_at' => $order->updated_at?->toDateTimeString(),
@@ -214,7 +215,7 @@ class OrderRepository
         return Cache::remember($cacheKey, 1800, function () use ($id) {
             // Оптимизация: загружаем только необходимые поля
             $order = Order::select('id', 'client_id', 'project_id', 'product_id', 'stage_id', 
-                                  'quantity', 'deadline', 'price', 'payment_amount', 'is_archived', 'reason', 'reason_status', 
+                                  'quantity', 'deadline', 'price', 'payment_amount', 'payment_type', 'is_archived', 'reason', 'reason_status', 
                                   'archived_at', 'created_at', 'updated_at')
                 ->with([
                     'project' => function ($q) {
@@ -336,6 +337,7 @@ class OrderRepository
             $order->deadline = $item['deadline'] ? \Carbon\Carbon::parse($item['deadline']) : null;
             $order->price = $item['price'];
             $order->payment_amount = $item['payment_amount'] ?? null;
+            $order->payment_type = $item['payment_type'] ?? null;
             $order->is_archived = $item['is_archived'];
             $order->created_at = $item['created_at'] ? \Carbon\Carbon::parse($item['created_at']) : null;
             $order->updated_at = $item['updated_at'] ? \Carbon\Carbon::parse($item['updated_at']) : null;

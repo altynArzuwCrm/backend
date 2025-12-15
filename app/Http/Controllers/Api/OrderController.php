@@ -85,6 +85,7 @@ class OrderController extends Controller
             'deadline' => 'nullable|date',
             'price' => 'nullable|numeric|min:0',
             'payment_amount' => 'nullable|numeric|min:0',
+            'payment_type' => 'nullable|string|in:cash,card',
             'assignments' => 'sometimes|array',
             'assignments.*.user_id' => 'required_with:assignments|exists:users,id',
             'assignments.*.role_type' => 'required_with:assignments|string',
@@ -451,7 +452,7 @@ class OrderController extends Controller
 
         // Оптимизация: загружаем только необходимые поля для ответа
         $order = Order::select('id', 'client_id', 'project_id', 'product_id', 'stage_id', 
-                              'quantity', 'deadline', 'price', 'payment_amount', 'is_archived', 'created_at', 'updated_at')
+                              'quantity', 'deadline', 'price', 'payment_amount', 'payment_type', 'is_archived', 'created_at', 'updated_at')
             ->with([
                 'assignments' => function ($q) {
                     $q->select('id', 'order_id', 'user_id', 'role_type', 'status');
@@ -532,6 +533,7 @@ class OrderController extends Controller
             'deadline' => ['nullable', 'date'],
             'price' => 'nullable|numeric|min:0',
             'payment_amount' => 'nullable|numeric|min:0',
+            'payment_type' => 'nullable|string|in:cash,card',
             'project_id' => ['nullable', 'integer', 'exists:projects,id'],
             'project_title' => 'nullable|string|max:255',
             'stage' => 'sometimes|string',
@@ -713,7 +715,7 @@ class OrderController extends Controller
 
         // Оптимизация: загружаем только необходимые поля для ответа
         $order = Order::select('id', 'client_id', 'project_id', 'product_id', 'stage_id', 
-                              'quantity', 'deadline', 'price', 'is_archived', 'created_at', 'updated_at')
+                              'quantity', 'deadline', 'price', 'payment_amount', 'payment_type', 'is_archived', 'created_at', 'updated_at')
             ->with([
                 'assignments' => function ($q) {
                     $q->select('id', 'order_id', 'user_id', 'role_type', 'status');
@@ -882,7 +884,7 @@ class OrderController extends Controller
 
         // Оптимизация: загружаем только необходимые поля для ответа
         $order = Order::select('id', 'client_id', 'project_id', 'product_id', 'stage_id', 
-                              'quantity', 'deadline', 'price', 'payment_amount', 'is_archived', 'created_at', 'updated_at')
+                              'quantity', 'deadline', 'price', 'payment_amount', 'payment_type', 'is_archived', 'created_at', 'updated_at')
             ->with([
                 'project' => function ($q) {
                     $q->select('id', 'title');
