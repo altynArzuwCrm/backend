@@ -64,6 +64,69 @@ class OrderRepository
             // Админ/менеджер без admin_view — полный доступ
         }
 
+        // Фильтр для актуальных заказов пользователя (только незавершенные задачи на текущей стадии)
+        if ($request->boolean('active_only')) {
+            // Исключаем завершенные и отмененные заказы
+            $completedStage = \App\Models\Stage::findByName('completed');
+            $cancelledStage = \App\Models\Stage::findByName('cancelled');
+            
+            if ($completedStage) {
+                $query->where('orders.stage_id', '!=', $completedStage->id);
+            }
+            if ($cancelledStage) {
+                $query->where('orders.stage_id', '!=', $cancelledStage->id);
+            }
+            
+            // Для обычных пользователей - только их активные задачи на текущей стадии заказа
+            if (!$user->hasAnyRole(['admin', 'manager'])) {
+                // Показываем заказы, где у пользователя есть незавершенное назначение
+                // И это назначение связано с текущей стадией заказа ИЛИ роль соответствует стадии
+                // НЕ показываем заказы, где назначение не связано со стадией и роль не соответствует стадии
+                $query->whereExists(function ($subquery) use ($user) {
+                    $subquery->select(DB::raw(1))
+                        ->from('order_assignments')
+                        ->where('order_assignments.user_id', $user->id)
+                        ->whereColumn('order_assignments.order_id', 'orders.id')
+                        ->whereNotIn('order_assignments.status', ['approved', 'cancelled'])
+                        ->whereNull('order_assignments.completed_at')
+                        ->whereNull('order_assignments.deleted_at')
+                        ->where(function ($q) {
+                            // Вариант 1: Назначение явно связано с текущей стадией через order_stage_assignments
+                            $q->whereExists(function ($subquery2) {
+                                $subquery2->select(DB::raw(1))
+                                    ->from('order_stage_assignments')
+                                    ->whereColumn('order_stage_assignments.order_assignment_id', 'order_assignments.id')
+                                    ->whereColumn('order_stage_assignments.stage_id', 'orders.stage_id')
+                                    ->where('order_stage_assignments.is_assigned', true);
+                            })
+                            // Вариант 2: Роль в назначении (role_type) соответствует ролям текущей стадии заказа
+                            ->orWhereExists(function ($subquery3) {
+                                $subquery3->select(DB::raw(1))
+                                    ->from('stage_roles')
+                                    ->join('roles', 'stage_roles.role_id', '=', 'roles.id')
+                                    ->whereColumn('stage_roles.stage_id', 'orders.stage_id')
+                                    ->whereColumn('roles.name', 'order_assignments.role_type');
+                            });
+                        });
+                });
+            } else {
+                // Для админов/менеджеров - все заказы с активными назначениями на текущей стадии
+                $query->whereExists(function ($subquery) {
+                    $subquery->select(DB::raw(1))
+                        ->from('order_assignments')
+                        ->join('order_stage_assignments', function ($join) {
+                            $join->on('order_stage_assignments.order_assignment_id', '=', 'order_assignments.id')
+                                 ->whereColumn('order_stage_assignments.stage_id', 'orders.stage_id');
+                        })
+                        ->whereColumn('order_assignments.order_id', 'orders.id')
+                        ->whereNotIn('order_assignments.status', ['approved', 'cancelled'])
+                        ->whereNull('order_assignments.completed_at')
+                        ->whereNull('order_assignments.deleted_at')
+                        ->where('order_stage_assignments.is_assigned', true);
+                });
+            }
+        }
+
         // Фильтры
         if ($request->project_id) {
             $query->where('project_id', $request->project_id);
@@ -95,20 +158,34 @@ class OrderRepository
 
         if ($request->filled('assignment_status')) {
             $assignmentStatus = $request->assignment_status;
-            // Оптимизация: используем whereExists вместо whereHas для лучшей производительности
-            // Фильтруем заказы, которые имеют назначения с указанным статусом
-            // и не имеют назначений с другим статусом
-            $query->whereExists(function ($subquery) use ($assignmentStatus) {
-                $subquery->select(DB::raw(1))
-                    ->from('order_assignments')
-                    ->whereColumn('order_assignments.order_id', 'orders.id')
-                    ->where('order_assignments.status', $assignmentStatus);
-            })->whereNotExists(function ($subquery) use ($assignmentStatus) {
-                $subquery->select(DB::raw(1))
-                    ->from('order_assignments')
-                    ->whereColumn('order_assignments.order_id', 'orders.id')
-                    ->where('order_assignments.status', '!=', $assignmentStatus);
-            });
+            
+            if (!$user->hasAnyRole(['admin', 'manager'])) {
+                // Для обычных пользователей - фильтруем только их назначения
+                $query->whereExists(function ($subquery) use ($assignmentStatus, $user) {
+                    $subquery->select(DB::raw(1))
+                        ->from('order_assignments')
+                        ->whereColumn('order_assignments.order_id', 'orders.id')
+                        ->where('order_assignments.user_id', $user->id)
+                        ->where('order_assignments.status', $assignmentStatus)
+                        ->whereNull('order_assignments.deleted_at');
+                });
+            } else {
+                // Для админов/менеджеров - фильтруем заказы, которые имеют назначения с указанным статусом
+                // и не имеют назначений с другим статусом
+                $query->whereExists(function ($subquery) use ($assignmentStatus) {
+                    $subquery->select(DB::raw(1))
+                        ->from('order_assignments')
+                        ->whereColumn('order_assignments.order_id', 'orders.id')
+                        ->where('order_assignments.status', $assignmentStatus)
+                        ->whereNull('order_assignments.deleted_at');
+                })->whereNotExists(function ($subquery) use ($assignmentStatus) {
+                    $subquery->select(DB::raw(1))
+                        ->from('order_assignments')
+                        ->whereColumn('order_assignments.order_id', 'orders.id')
+                        ->where('order_assignments.status', '!=', $assignmentStatus)
+                        ->whereNull('order_assignments.deleted_at');
+                });
+            }
         }
 
         // Поиск - оптимизирован через join вместо whereHas

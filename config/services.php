@@ -43,6 +43,7 @@ return [
     'sms' => [
         'url' => env('SMS_API_URL'),
         'key' => env('SMS_API_KEY'),
+        'timeout' => env('SMS_API_TIMEOUT', 30), // Timeout в секундах
     ],
 
 ];

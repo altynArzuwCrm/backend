@@ -26,8 +26,11 @@ return [
         'http://localhost:5176',           // Development
         'http://localhost:5177',           // Development
         'http://localhost:3000',           // Development alternative
+        'http://crm.aa.com.tm',            // Production
         'https://crm.ltm.studio',          // Production
         'https://www.crm.ltm.studio',      // Production www
+        'https://admin.altyn-arzuw.com',
+        'http://admin.altyn-arzuw.com'
     ],
 
     'allowed_origins_patterns' => [

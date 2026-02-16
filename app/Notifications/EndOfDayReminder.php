@@ -2,13 +2,11 @@
 
 namespace App\Notifications;
 
-use Illuminate\Bus\Queueable;
 use Illuminate\Notifications\Notification;
 use App\Services\FCMService;
 
 class EndOfDayReminder extends Notification
 {
-    use Queueable;
 
     public $date;
     public $pendingOrders;

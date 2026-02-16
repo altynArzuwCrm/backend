@@ -3,12 +3,10 @@
 namespace App\Notifications;
 
 use App\Models\OrderAssignment;
-use Illuminate\Bus\Queueable;
 use Illuminate\Notifications\Notification;
 
 class AssignmentStatusChanged extends Notification
 {
-    use Queueable;
 
     public $assignment;
     public $actionUser;
@@ -30,7 +28,25 @@ class AssignmentStatusChanged extends Notification
         if ($notifiable->id === $actionUser->id) {
             return [];
         }
-        return ['database'];
+        
+        $channels = ['database'];
+        
+        // Добавляем FCM канал, если у пользователя есть FCM токен
+        if ($notifiable->fcm_token) {
+            $channels[] = 'fcm';
+            \Illuminate\Support\Facades\Log::info('AssignmentStatusChanged: Adding FCM channel', [
+                'user_id' => $notifiable->id,
+                'username' => $notifiable->username ?? 'unknown',
+                'order_id' => $this->assignment->order_id
+            ]);
+        } else {
+            \Illuminate\Support\Facades\Log::warning('AssignmentStatusChanged: User has no FCM token, skipping FCM channel', [
+                'user_id' => $notifiable->id,
+                'username' => $notifiable->username ?? 'unknown'
+            ]);
+        }
+        
+        return $channels;
     }
 
     public function toDatabase($notifiable)
@@ -65,51 +81,35 @@ class AssignmentStatusChanged extends Notification
 
     public function toFcm($notifiable)
     {
+        $actionUser = $this->actionUser ?? auth()->user();
+        
+        // Получаем тип роли из назначения, если не передан явно
+        $roleType = $this->roleType ?? $this->assignment->role_type;
+        
+        // Получаем display_name роли
+        $roleDisplayName = '-';
+        if ($roleType) {
+            $role = \App\Models\Role::where('name', $roleType)->first();
+            $roleDisplayName = $role ? $role->display_name : $roleType;
+        }
+        
+        $order = $this->assignment->order;
+        
         $title = 'Изменен статус назначения';
-        $body = 'Статус вашего назначения на заказ #%order_id% изменен на "%status%"';
-        
-        // Заменяем плейсхолдеры на реальные данные
-        $title = str_replace([
-            '%order_id%',
-            '%stage%',
-            '%old_stage%',
-            '%user%',
-            '%status%',
-            '%role%'
-        ], [
-            $this->order->id ?? '',
-            $this->stage->name ?? '',
-            $this->oldStage->name ?? '',
-            $this->actionUser->name ?? '',
-            $this->status ?? '',
-            $this->roleType ?? ''
-        ], $title);
-        
-        $body = str_replace([
-            '%order_id%',
-            '%stage%',
-            '%old_stage%',
-            '%user%',
-            '%status%',
-            '%role%'
-        ], [
-            $this->order->id ?? '',
-            $this->stage->name ?? '',
-            $this->oldStage->name ?? '',
-            $this->actionUser->name ?? '',
-            $this->status ?? '',
-            $this->roleType ?? ''
-        ], $body);
+        $body = 'Пользователь ' . ($actionUser->display_name ?? $actionUser->username) . ' изменил статус назначения на "' . $this->assignment->status . '" для заказа #' . $this->assignment->order_id . ' (роль: "' . $roleDisplayName . '")';
 
         return [
             'title' => $title,
             'body' => $body,
             'data' => [
                 'type' => 'assignment_status_changed',
-                'order_id' => $this->order->id ?? null,
-                'stage' => $this->stage->name ?? null,
-                'action_user_name' => $this->actionUser->name ?? '',
-                'url' => '/orders?order=' . ($this->order->id ?? ''),
+                'order_id' => $this->assignment->order_id,
+                'assignment_id' => $this->assignment->id,
+                'status' => $this->assignment->status,
+                'role_type' => $roleType,
+                'stage' => $this->stage,
+                'action_user_name' => $actionUser->display_name ?? $actionUser->username ?? '',
+                'url' => '/orders?order=' . $this->assignment->order_id,
             ],
         ];
     }

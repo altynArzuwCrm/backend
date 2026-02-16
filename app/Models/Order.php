@@ -9,7 +9,7 @@ use App\Services\CacheService;
 class Order extends Model
 {
     use HasFactory;
-    
+
     // Флаг для предотвращения рекурсии при переходе стадий
     protected static $isTransitioning = false;
 
@@ -61,7 +61,7 @@ class Order extends Model
                     }
                 }
             }
-            
+
             // Устанавливаем payment_amount по умолчанию, если не установлен
             if (!isset($order->payment_amount) || $order->payment_amount === null) {
                 $order->payment_amount = 0;
@@ -71,7 +71,7 @@ class Order extends Model
         static::created(function ($order) {
             try {
                 if ($order->project) {
-                    $order->project->recalculateTotalPrice();
+                    $order->project->recalculateTotals();
                 }
             } catch (\Exception $e) {
                 \Log::error('Error recalculating project price in Order created observer', [
@@ -79,7 +79,7 @@ class Order extends Model
                     'error' => $e->getMessage()
                 ]);
             }
-            
+
             // Очищаем кэш заказов при создании нового заказа
             try {
                 CacheService::invalidateOrderCaches($order->id);
@@ -95,17 +95,17 @@ class Order extends Model
                     if ($order->getOriginal('project_id')) {
                         $oldProject = \App\Models\Project::find($order->getOriginal('project_id'));
                         if ($oldProject) {
-                            $oldProject->recalculateTotalPrice();
+                            $oldProject->recalculateTotals();
                         }
                     }
-                    
+
                     // Пересчитываем новый проект (если есть)
                     if ($order->project_id && $order->project) {
-                        $order->project->recalculateTotalPrice();
+                        $order->project->recalculateTotals();
                     }
                 } elseif ($order->project) {
                     // Если проект не изменился, просто пересчитываем текущий проект
-                    $order->project->recalculateTotalPrice();
+                    $order->project->recalculateTotals();
                 }
             } catch (\Exception $e) {
                 // Логируем ошибку, но не прерываем процесс обновления
@@ -115,7 +115,7 @@ class Order extends Model
                     'trace' => $e->getTraceAsString()
                 ]);
             }
-            
+
             // Очищаем кэш заказов при обновлении заказа
             try {
                 CacheService::invalidateOrderCaches($order->id);
@@ -124,7 +124,7 @@ class Order extends Model
                 \Log::warning('Failed to invalidate cache', ['error' => $e->getMessage()]);
             }
         });
-        
+
         static::saved(function ($order) {
             // Проверяем переход с final на completed при полной оплате
             // Используем saved событие, чтобы избежать рекурсии при обновлении
@@ -133,13 +133,13 @@ class Order extends Model
                 if (static::$isTransitioning) {
                     return;
                 }
-                
+
                 // Проверяем, что payment_amount был изменен в предыдущем обновлении
                 if ($order->wasChanged('payment_amount')) {
                     // Перезагружаем отношения, чтобы получить актуальную стадию
                     $order->load('stage');
                     $currentStageName = is_string($order->stage) ? $order->stage : $order->stage->name ?? null;
-                    
+
                     // Если заказ на стадии final и стал полностью оплачен - переходим на completed
                     if ($currentStageName === 'final' && $order->isFullyPaid() && $order->isCurrentStageApproved()) {
                         static::$isTransitioning = true;
@@ -161,7 +161,7 @@ class Order extends Model
         static::deleted(function ($order) {
             try {
                 if ($order->project) {
-                    $order->project->recalculateTotalPrice();
+                    $order->project->recalculateTotals();
                 }
             } catch (\Exception $e) {
                 \Log::error('Error recalculating project price in Order deleted observer', [
@@ -169,7 +169,7 @@ class Order extends Model
                     'error' => $e->getMessage()
                 ]);
             }
-            
+
             // Очищаем кэш заказов при удалении заказа
             try {
                 $orderId = $order->id ?? null;
@@ -428,7 +428,7 @@ class Order extends Model
             }
 
             // Архивируем только при переходе на completed или cancelled
-        if ($nextStage === 'completed' || $nextStage === 'cancelled') {
+            if ($nextStage === 'completed' || $nextStage === 'cancelled') {
                 $this->archive();
             } else {
                 // Для всех других стадий (включая final) снимаем архив

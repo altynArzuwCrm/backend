@@ -7,12 +7,9 @@ use Illuminate\Support\Facades\DB;
 
 class RoleSeeder extends Seeder
 {
-    /**
-     * Run the database seeds.
-     */
+   
     public function run(): void
     {
-        // Добавляем базовые роли
         $roles = [
             ['name' => 'admin', 'display_name' => 'Администратор', 'description' => 'Полный доступ к системе'],
             ['name' => 'manager', 'display_name' => 'Менеджер', 'description' => 'Управление заказами и клиентами'],
@@ -30,7 +27,6 @@ class RoleSeeder extends Seeder
             );
         }
 
-        // Назначаем роль admin первому пользователю по умолчанию
         $firstUser = DB::table('users')->first();
         if ($firstUser) {
             $adminRoleId = DB::table('roles')->where('name', 'admin')->value('id');

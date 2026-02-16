@@ -7,12 +7,8 @@ use Illuminate\Support\Facades\DB;
 
 class StageRoleSeeder extends Seeder
 {
-    /**
-     * Run the database seeds.
-     */
     public function run(): void
     {
-        // Set up default stage-role mappings that match current system
         $stageRoleMappings = [
             'design' => ['designer'],
             'print' => ['print_operator'],

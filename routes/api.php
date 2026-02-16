@@ -16,14 +16,15 @@ use App\Http\Controllers\Api\ProductAssignmentController;
 use App\Http\Controllers\Api\RoleController;
 use App\Http\Controllers\Api\CategoryController;
 use App\Http\Controllers\Api\BulkDeleteController;
+use App\Http\Controllers\Api\SmsController;
 use Illuminate\Support\Facades\Route;
 
-// Удален endpoint регистрации - регистрация должна выполняться только администраторами
-// Route::post('register', [AuthController::class, 'register']); // УДАЛЕНО: регистрация только через админ-панель
-
 Route::post('login', [AuthController::class, 'login'])
-    ->middleware('throttle:5,1') // Rate limit: 5 попыток в минуту для защиты от брутфорса
+    ->middleware('throttle:5,1')
     ->name('login');
+
+
+Route::get('sms', [SmsController::class, 'sendUnapprovedTasksReminders']);
 
 
 
@@ -67,7 +68,7 @@ Route::middleware(['auth:sanctum', 'handle.null.relations', 'throttle:300,1'])->
         Route::post('assign-to-stage', [OrderAssignmentController::class, 'assignToStage']);
         Route::post('remove-from-stage', [OrderAssignmentController::class, 'removeFromStage']);
     });
-    
+
     // Массовая отвязка заказов от проекта
     Route::post('orders/bulk-detach-from-project', [OrderController::class, 'bulkDetachFromProject']);
 

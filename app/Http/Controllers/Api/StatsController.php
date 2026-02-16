@@ -150,12 +150,20 @@ class StatsController extends Controller
     private function getEmployeeDashboard($user)
     {
         // Оптимизация: используем один запрос для получения всех статистик
+        // Исключаем назначения, где заказ завершен/отменен И назначение одобрено/отменено
         $stats = \App\Models\OrderAssignment::where('user_id', $user->id)
+            ->join('orders', 'order_assignments.order_id', '=', 'orders.id')
+            ->join('stages', 'orders.stage_id', '=', 'stages.id')
+            ->whereNot(function ($query) {
+                // Исключаем случаи, где заказ завершен/отменен И назначение одобрено/отменено
+                $query->whereIn('stages.name', ['completed', 'cancelled'])
+                      ->whereIn('order_assignments.status', ['approved', 'cancelled']);
+            })
             ->selectRaw('
                 COUNT(*) as total_assignments,
-                SUM(CASE WHEN status = "completed" THEN 1 ELSE 0 END) as completed_assignments,
-                SUM(CASE WHEN status = "pending" THEN 1 ELSE 0 END) as pending_assignments,
-                SUM(CASE WHEN status = "in_progress" THEN 1 ELSE 0 END) as in_progress_assignments
+                SUM(CASE WHEN order_assignments.status = "completed" THEN 1 ELSE 0 END) as completed_assignments,
+                SUM(CASE WHEN order_assignments.status = "pending" THEN 1 ELSE 0 END) as pending_assignments,
+                SUM(CASE WHEN order_assignments.status = "in_progress" THEN 1 ELSE 0 END) as in_progress_assignments
             ')
             ->first();
         
@@ -165,12 +173,21 @@ class StatsController extends Controller
         $inProgressAssignments = $stats->in_progress_assignments ?? 0;
 
         // Загружаем только для recentAssignments (максимум 20 последних)
+        // Также применяем фильтр для recentAssignments
         $userAssignments = \App\Models\OrderAssignment::where('user_id', $user->id)
+            ->join('orders', 'order_assignments.order_id', '=', 'orders.id')
+            ->join('stages', 'orders.stage_id', '=', 'stages.id')
+            ->whereNot(function ($query) {
+                // Исключаем случаи, где заказ завершен/отменен И назначение одобрено/отменено
+                $query->whereIn('stages.name', ['completed', 'cancelled'])
+                      ->whereIn('order_assignments.status', ['approved', 'cancelled']);
+            })
             ->with(['order' => function ($q) {
                 $q->select('id', 'product_id', 'stage_id', 'deadline');
             }, 'order.product:id,name', 'order.stage:id,name'])
-            ->orderBy('created_at', 'desc')
+            ->orderBy('order_assignments.created_at', 'desc')
             ->limit(20)
+            ->select('order_assignments.*')
             ->get();
 
         $recentAssignments = $userAssignments
@@ -192,9 +209,15 @@ class StatsController extends Controller
         // Оптимизация: используем join вместо whereHas
         $delayedAssignments = DB::table('order_assignments')
             ->join('orders', 'order_assignments.order_id', '=', 'orders.id')
+            ->join('stages', 'orders.stage_id', '=', 'stages.id')
             ->where('order_assignments.user_id', $user->id)
             ->where('orders.deadline', '<', now())
             ->whereNotIn('order_assignments.status', ['completed', 'cancelled'])
+            ->whereNot(function ($query) {
+                // Исключаем случаи, где заказ завершен/отменен И назначение одобрено/отменено
+                $query->whereIn('stages.name', ['completed', 'cancelled'])
+                      ->whereIn('order_assignments.status', ['approved', 'cancelled']);
+            })
             ->count();
 
         return response()->json([

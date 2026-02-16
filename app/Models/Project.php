@@ -38,10 +38,10 @@ class Project extends Model
     }
 
 
-    public function recalculateTotalPrice()
+    public function recalculateTotals()
     {
-        $total = $this->orders()->sum('price');
-        $this->total_price = $total;
+        $this->total_price = $this->orders()->sum('price');
+        $this->payment_amount = $this->orders()->sum('payment_amount');
         $this->save();
     }
 }

@@ -12,7 +12,6 @@ class StageSeeder extends Seeder
      */
     public function run(): void
     {
-        // Insert default stages that match current system
         $stages = [
             [
                 'name' => 'draft',

@@ -7,22 +7,15 @@ use Illuminate\Console\Command;
 
 class CacheManagementCommand extends Command
 {
-    /**
-     * The name and signature of the console command.
-     */
     protected $signature = 'cache:manage 
                             {action : Действие (clear, stats, invalidate)}
                             {--type= : Тип кэша для очистки (users, orders, products, clients, projects, stages, roles, stats, all)}
                             {--key= : Конкретный ключ кэша для инвалидации}';
 
-    /**
-     * The console command description.
-     */
+    
     protected $description = 'Управление кэшем приложения через CacheService';
 
-    /**
-     * Execute the console command.
-     */
+    
     public function handle()
     {
         $action = $this->argument('action');
@@ -47,9 +40,7 @@ class CacheManagementCommand extends Command
         return 0;
     }
 
-    /**
-     * Handle cache clearing
-     */
+    
     private function handleClear(?string $type): void
     {
         if (!$type) {
@@ -108,9 +99,7 @@ class CacheManagementCommand extends Command
         }
     }
 
-    /**
-     * Handle cache statistics
-     */
+    
     private function handleStats(): void
     {
         $stats = CacheService::getStats();
@@ -126,9 +115,7 @@ class CacheManagementCommand extends Command
         $this->info('Драйвер кэша: ' . config('cache.default'));
     }
 
-    /**
-     * Handle specific key invalidation
-     */
+    
     private function handleInvalidate(?string $key): void
     {
         if (!$key) {

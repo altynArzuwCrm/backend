@@ -42,7 +42,6 @@ class HandleNullRelations
                 ], 500);
             }
 
-            // Если это не ошибка null объекта, пробрасываем дальше
             throw $e;
         }
     }

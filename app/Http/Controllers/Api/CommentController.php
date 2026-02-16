@@ -107,7 +107,11 @@ class CommentController extends Controller
             $project = null;
             if (!empty($data['order_id'])) {
                 try {
-                    $order = Order::select('id', 'stage_id')->with('stage:id,name')->findOrFail($data['order_id']);
+                    // Загружаем заказ полностью для корректной работы OrderPolicy::view
+                    // OrderPolicy использует $order->assignments(), поэтому нужны все поля
+                    $order = Order::with(['stage:id,name', 'assignments' => function($q) {
+                        $q->select('id', 'order_id', 'user_id', 'status');
+                    }])->findOrFail($data['order_id']);
                     if (Gate::denies('view', $order)) {
                         return response()->json(['error' => 'Доступ запрещён'], 403);
                     }
@@ -139,6 +143,10 @@ class CommentController extends Controller
             // Если уведомления не отправятся, комментарий все равно будет создан
             if (!empty($data['order_id']) && $order) {
                 try {
+                    // Добавляем таймаут для защиты от зависаний
+                    $startTime = microtime(true);
+                    $maxExecutionTime = 8; // Максимум 8 секунд на отправку уведомлений
+                    
                     // Используем уже загруженный заказ
                     $stage = $order->stage ? $order->stage->name : null;
                     $roleMap = [
@@ -148,64 +156,100 @@ class CommentController extends Controller
                         'workshop' => 'workshop_worker',
                     ];
                     $notifiedUserIds = [];
+                    
                     if ($stage && isset($roleMap[$stage])) {
                         $roleType = $roleMap[$stage];
-                        // Оптимизация: используем whereExists вместо whereHas
-                        $assignedUsers = $order->assignments()
-                            ->whereExists(function ($subquery) use ($roleType) {
-                                $subquery->select(\Illuminate\Support\Facades\DB::raw(1))
-                                    ->from('user_roles')
-                                    ->join('roles', 'user_roles.role_id', '=', 'roles.id')
-                                    ->whereColumn('user_roles.user_id', 'order_assignments.user_id')
-                                    ->where('roles.name', $roleType);
-                            })
-                            ->where('status', '!=', 'cancelled')
-                            ->with('user:id,name,username,fcm_token')
-                            ->get()
-                            ->pluck('user')
-                            ->filter();
-                        foreach ($assignedUsers as $user) {
-                            if ($user && $user->id !== Auth::id()) {
-                                try {
-                                    $actionUser = Auth::user();
-                                    if ($actionUser) {
-                                        $user->notify(new \App\Notifications\OrderCommented($order, $comment, $actionUser));
-                                        $notifiedUserIds[] = $user->id;
-                                    }
-                                } catch (\Exception $notificationError) {
-                                    // Логируем ошибку уведомления, но не прерываем выполнение
-                                    Log::warning('Failed to send notification to user', [
-                                        'user_id' => $user->id,
-                                        'comment_id' => $comment->id,
-                                        'error' => $notificationError->getMessage()
+                        
+                        try {
+                            // Оптимизированный запрос: используем прямой запрос к OrderAssignment
+                            // вместо сложного whereExists с join через отношения
+                            $assignedUsers = \App\Models\OrderAssignment::where('order_id', $order->id)
+                                ->where('status', '!=', 'cancelled')
+                                ->whereHas('user.roles', function ($query) use ($roleType) {
+                                    $query->where('roles.name', $roleType);
+                                })
+                                ->with(['user' => function ($query) {
+                                    $query->select('id', 'name', 'username', 'fcm_token');
+                                }])
+                                ->limit(50) // Ограничиваем количество для защиты от зависаний
+                                ->get()
+                                ->pluck('user')
+                                ->filter();
+                            
+                            foreach ($assignedUsers as $user) {
+                                // Проверяем таймаут перед каждой отправкой
+                                if (microtime(true) - $startTime > $maxExecutionTime) {
+                                    Log::warning('Notification timeout reached for assigned users', [
+                                        'order_id' => $order->id,
+                                        'comment_id' => $comment->id
                                     ]);
+                                    break;
+                                }
+                                
+                                if ($user && $user->id !== Auth::id()) {
+                                    try {
+                                        $actionUser = Auth::user();
+                                        if ($actionUser) {
+                                            $user->notify(new \App\Notifications\OrderCommented($order, $comment, $actionUser));
+                                            $notifiedUserIds[] = $user->id;
+                                        }
+                                    } catch (\Exception $notificationError) {
+                                        Log::warning('Failed to send notification to user', [
+                                            'user_id' => $user->id,
+                                            'comment_id' => $comment->id,
+                                            'error' => $notificationError->getMessage()
+                                        ]);
+                                    }
                                 }
                             }
+                        } catch (\Exception $e) {
+                            Log::error('Error fetching assigned users for notifications', [
+                                'order_id' => $order->id,
+                                'error' => $e->getMessage()
+                            ]);
                         }
                     }
-                    // Оптимизация: используем whereExists вместо whereHas
-                    $adminsAndManagers = \App\Models\User::whereExists(function ($subquery) {
-                        $subquery->select(\Illuminate\Support\Facades\DB::raw(1))
-                            ->from('user_roles')
-                            ->join('roles', 'user_roles.role_id', '=', 'roles.id')
-                            ->whereColumn('user_roles.user_id', 'users.id')
-                            ->whereIn('roles.name', ['admin', 'manager']);
-                    })->select('id', 'name', 'username', 'fcm_token')->get();
-                    foreach ($adminsAndManagers as $admin) {
-                        if ($admin->id !== Auth::id() && !in_array($admin->id, $notifiedUserIds)) {
-                            try {
-                                $actionUser = Auth::user();
-                                if ($actionUser) {
-                                    $admin->notify(new \App\Notifications\OrderCommented($order, $comment, $actionUser));
+                    
+                    // Кэшируем список админов/менеджеров (обновляется раз в минуту)
+                    if (microtime(true) - $startTime < $maxExecutionTime) {
+                        try {
+                            $adminsAndManagers = \Illuminate\Support\Facades\Cache::remember(
+                                'admins_and_managers_list',
+                                60, // 1 минута
+                                function () {
+                                    return \App\Models\User::whereHas('roles', function ($query) {
+                                        $query->whereIn('roles.name', ['admin', 'manager']);
+                                    })
+                                    ->select('id', 'name', 'username', 'fcm_token')
+                                    ->get();
                                 }
-                            } catch (\Exception $notificationError) {
-                                // Логируем ошибку уведомления, но не прерываем выполнение
-                                Log::warning('Failed to send notification to admin/manager', [
-                                    'user_id' => $admin->id,
-                                    'comment_id' => $comment->id,
-                                    'error' => $notificationError->getMessage()
-                                ]);
+                            );
+                            
+                            foreach ($adminsAndManagers as $admin) {
+                                // Проверяем таймаут перед каждой отправкой
+                                if (microtime(true) - $startTime > $maxExecutionTime) {
+                                    break;
+                                }
+                                
+                                if ($admin->id !== Auth::id() && !in_array($admin->id, $notifiedUserIds)) {
+                                    try {
+                                        $actionUser = Auth::user();
+                                        if ($actionUser) {
+                                            $admin->notify(new \App\Notifications\OrderCommented($order, $comment, $actionUser));
+                                        }
+                                    } catch (\Exception $notificationError) {
+                                        Log::warning('Failed to send notification to admin/manager', [
+                                            'user_id' => $admin->id,
+                                            'comment_id' => $comment->id,
+                                            'error' => $notificationError->getMessage()
+                                        ]);
+                                    }
+                                }
                             }
+                        } catch (\Exception $e) {
+                            Log::error('Error fetching admins/managers for notifications', [
+                                'error' => $e->getMessage()
+                            ]);
                         }
                     }
                 } catch (\Exception $notificationError) {

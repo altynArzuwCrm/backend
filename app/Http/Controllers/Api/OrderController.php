@@ -107,13 +107,13 @@ class OrderController extends Controller
         if (isset($data['stages']) && is_array($data['stages']) && empty($data['stages'])) {
             unset($data['stages']); // Удаляем пустой массив стадий (но заказ все равно создастся)
         }
-        
+
         // Нормализуем payment_amount: пустые значения и null превращаем в 0
         if (!isset($data['payment_amount']) || $data['payment_amount'] === null || $data['payment_amount'] === '' || $data['payment_amount'] === 'null') {
             $data['payment_amount'] = 0;
         } else {
             // Преобразуем в число, если это строка
-            $data['payment_amount'] = is_numeric($data['payment_amount']) ? (float)$data['payment_amount'] : 0;
+            $data['payment_amount'] = is_numeric($data['payment_amount']) ? (float) $data['payment_amount'] : 0;
         }
 
         $product = null;
@@ -221,7 +221,7 @@ class OrderController extends Controller
                 }
             }
         }
-        
+
         // Если stage_id все еще не установлен, пытаемся найти draft
         if (!isset($data['stage_id']) || empty($data['stage_id'])) {
             $draftStage = \App\Models\Stage::findByName('draft');
@@ -300,7 +300,7 @@ class OrderController extends Controller
                     // Предзагружаем пользователей и стадии для избежания N+1
                     $userIds = collect($data['assignments'])->pluck('user_id')->unique()->values();
                     $stageIds = collect($data['assignments'])->pluck('stage_id')->filter()->unique()->values();
-                    
+
                     // Проверяем, что все пользователи существуют
                     $existingUserIds = \App\Models\User::whereIn('id', $userIds)->pluck('id')->toArray();
                     $missingUserIds = array_diff($userIds->toArray(), $existingUserIds);
@@ -312,7 +312,7 @@ class OrderController extends Controller
                         ->whereIn('id', $userIds)
                         ->get()
                         ->keyBy('id');
-                    
+
                     // Проверяем, что все стадии существуют (если указаны)
                     if ($stageIds->isNotEmpty()) {
                         $existingStageIds = \App\Models\Stage::whereIn('id', $stageIds)->pluck('id')->toArray();
@@ -451,8 +451,21 @@ class OrderController extends Controller
         $orderId = $order->id;
 
         // Оптимизация: загружаем только необходимые поля для ответа
-        $order = Order::select('id', 'client_id', 'project_id', 'product_id', 'stage_id', 
-                              'quantity', 'deadline', 'price', 'payment_amount', 'payment_type', 'is_archived', 'created_at', 'updated_at')
+        $order = Order::select(
+            'id',
+            'client_id',
+            'project_id',
+            'product_id',
+            'stage_id',
+            'quantity',
+            'deadline',
+            'price',
+            'payment_amount',
+            'payment_type',
+            'is_archived',
+            'created_at',
+            'updated_at'
+        )
             ->with([
                 'assignments' => function ($q) {
                     $q->select('id', 'order_id', 'user_id', 'role_type', 'status');
@@ -474,14 +487,14 @@ class OrderController extends Controller
                 }
             ])
             ->find($orderId);
-            
+
         if (!$order) {
             Log::error('Order not found after creation', ['order_id' => $orderId]);
             return response()->json([
                 'message' => 'Ошибка: заказ не найден после создания'
             ], 500);
         }
-            
+
         return response()->json($order, 201);
     }
 
@@ -497,16 +510,16 @@ class OrderController extends Controller
         if ($request->has('project_id') && ($projectIdValue === null || $projectIdValue === '' || $projectIdValue === 'null')) {
             // Запоминаем старый проект для пересчета цены
             $oldProjectId = $order->project_id;
-            
+
             $order->project_id = null;
             $order->save();
-            
+
             // Пересчитываем цену старого проекта (если был)
             if ($oldProjectId) {
                 try {
                     $oldProject = \App\Models\Project::find($oldProjectId);
                     if ($oldProject) {
-                        $oldProject->recalculateTotalPrice();
+                        $oldProject->recalculateTotals();
                         // Инвалидируем кэш проекта
                         CacheService::invalidateByTags([CacheService::TAG_PROJECTS]);
                     }
@@ -518,13 +531,13 @@ class OrderController extends Controller
                     ]);
                 }
             }
-            
+
             // Оптимизация: точечная инвалидация кэша вместо полной очистки
             CacheService::invalidateOrderCaches($order->id);
-            
+
             // Загружаем заказ с отношениями
             $order = Order::with('assignments.user')->find($order->id);
-            
+
             return response()->json($order);
         }
 
@@ -606,17 +619,17 @@ class OrderController extends Controller
         // Запоминаем старый project_id для пересчета цены старого проекта
         $oldProjectId = $order->project_id;
         $projectChanged = isset($data['project_id']) && $order->project_id != $data['project_id'];
-        
+
         try {
             $order->update($data);
-            
+
             // Если проект изменился, пересчитываем цены обоих проектов
             // (новый проект пересчитается через Order Observer, но старый нужно пересчитать вручную)
             if ($projectChanged && $oldProjectId) {
                 try {
                     $oldProject = \App\Models\Project::find($oldProjectId);
                     if ($oldProject) {
-                        $oldProject->recalculateTotalPrice();
+                        $oldProject->recalculateTotals();
                         CacheService::invalidateByTags([CacheService::TAG_PROJECTS]);
                     }
                 } catch (\Exception $e) {
@@ -655,7 +668,7 @@ class OrderController extends Controller
             // Оптимизация: загружаем только нужные поля
             $userIds = collect($data['assignments'])->pluck('user_id')->unique()->values();
             $stageIds = collect($data['assignments'])->pluck('stage_id')->filter()->unique()->values();
-            
+
             $usersById = \App\Models\User::select('id', 'name', 'username', 'fcm_token')
                 ->whereIn('id', $userIds)
                 ->get()
@@ -714,8 +727,21 @@ class OrderController extends Controller
         }
 
         // Оптимизация: загружаем только необходимые поля для ответа
-        $order = Order::select('id', 'client_id', 'project_id', 'product_id', 'stage_id', 
-                              'quantity', 'deadline', 'price', 'payment_amount', 'payment_type', 'is_archived', 'created_at', 'updated_at')
+        $order = Order::select(
+            'id',
+            'client_id',
+            'project_id',
+            'product_id',
+            'stage_id',
+            'quantity',
+            'deadline',
+            'price',
+            'payment_amount',
+            'payment_type',
+            'is_archived',
+            'created_at',
+            'updated_at'
+        )
             ->with([
                 'assignments' => function ($q) {
                     $q->select('id', 'order_id', 'user_id', 'role_type', 'status');
@@ -883,8 +909,21 @@ class OrderController extends Controller
         }
 
         // Оптимизация: загружаем только необходимые поля для ответа
-        $order = Order::select('id', 'client_id', 'project_id', 'product_id', 'stage_id', 
-                              'quantity', 'deadline', 'price', 'payment_amount', 'payment_type', 'is_archived', 'created_at', 'updated_at')
+        $order = Order::select(
+            'id',
+            'client_id',
+            'project_id',
+            'product_id',
+            'stage_id',
+            'quantity',
+            'deadline',
+            'price',
+            'payment_amount',
+            'payment_type',
+            'is_archived',
+            'created_at',
+            'updated_at'
+        )
             ->with([
                 'project' => function ($q) {
                     $q->select('id', 'title');
@@ -906,7 +945,7 @@ class OrderController extends Controller
                 }
             ])
             ->find($order->id);
-        
+
         return response()->json([
             'message' => 'Статус обновлён',
             'stage' => $order->stage->name,
@@ -979,10 +1018,12 @@ class OrderController extends Controller
 
         $usersToAssign = collect();
         foreach ($productAssignments as $pa) {
-            if ($pa->user) $usersToAssign[$pa->user->id] = $pa->user;
+            if ($pa->user)
+                $usersToAssign[$pa->user->id] = $pa->user;
         }
         foreach ($orderAssignments as $oa) {
-            if ($oa->user) $usersToAssign[$oa->user->id] = $oa->user;
+            if ($oa->user)
+                $usersToAssign[$oa->user->id] = $oa->user;
         }
 
         if ($usersToAssign->isEmpty()) {
@@ -1056,7 +1097,7 @@ class OrderController extends Controller
         foreach ($orderIds as $orderId) {
             try {
                 $order = Order::with('stage')->find($orderId);
-                
+
                 if (!$order) {
                     $errors[] = "Заказ ID $orderId не найден";
                     continue;
@@ -1234,7 +1275,7 @@ class OrderController extends Controller
         foreach ($orderIds as $orderId) {
             try {
                 $order = Order::find($orderId);
-                
+
                 if (!$order) {
                     $errors[] = "Заказ ID $orderId не найден";
                     continue;
