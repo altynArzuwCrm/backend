@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Client;
 use App\Services\CacheService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
@@ -60,7 +61,7 @@ class ClientController extends Controller
 
         // Проверяем, нужно ли принудительно обновить кэш
         $cacheTime = $request->has('force_refresh') ? 0 : 900;
-        
+
         // Кэшируем результаты поиска на 15 минут для быстрых ответов
         $cacheKey = 'clients_' . $user->id . '_' . md5($request->fullUrl());
         $clients = CacheService::rememberWithTags($cacheKey, $cacheTime, function () use ($query, $perPage) {
@@ -77,18 +78,17 @@ class ClientController extends Controller
         }
 
         $user = request()->user();
-        // Разрешаем указать лимит через параметр, по умолчанию 500 для селектов
-        $limit = min((int) $request->get('limit', 500), 5000); // Максимум 5000
-        
-        $cacheKey = 'clients_for_user_' . $user->id . '_roles_' . $user->roles->pluck('name')->implode('-') . '_limit_' . $limit;
+        // По умолчанию без лимита; limit=N — ограничить (макс. 5000)
+        $limitParam = $request->get('limit');
+        $limit = $limitParam !== null && $limitParam !== '' ? min((int) $limitParam, 5000) : null;
+
+        $cacheKey = 'clients_for_user_' . $user->id . '_roles_' . $user->roles->pluck('name')->implode('-') . '_limit_' . ($limit === null ? 'all' : $limit);
         $clients = CacheService::rememberWithTags($cacheKey, 1800, function () use ($user, $limit) {
-            // Оптимизация: выбираем только необходимые поля для уменьшения размера данных
             $query = Client::select('id', 'name', 'company_name', 'created_at')
                 ->with(['contacts' => function ($q) {
                     $q->select('id', 'client_id', 'type', 'value');
                 }]);
             if (!$user->hasAnyRole(['admin', 'manager'])) {
-                // Оптимизация: используем whereExists вместо pluck + whereIn
                 $query->whereExists(function ($subquery) use ($user) {
                     $subquery->select(DB::raw(1))
                         ->from('order_assignments')
@@ -97,7 +97,11 @@ class ClientController extends Controller
                         ->where('order_assignments.user_id', $user->id);
                 });
             }
-            return $query->orderBy('id')->limit($limit)->get();
+            $query->orderBy('id');
+            if ($limit !== null) {
+                $query->limit($limit);
+            }
+            return $query->get();
         }, [CacheService::TAG_CLIENTS]);
         return $clients;
     }
