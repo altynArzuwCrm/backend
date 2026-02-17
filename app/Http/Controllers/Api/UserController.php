@@ -32,7 +32,7 @@ class UserController extends Controller
 
         // Проверяем, нужно ли принудительно обновить кэш
         $cacheTime = $request->has('force_refresh') ? 0 : 900;
-        
+
         $cacheKey = 'users_' . md5($request->fullUrl());
         $result = CacheService::rememberWithTags($cacheKey, $cacheTime, function () use ($request) {
             // Оптимизация: выбираем только необходимые поля
@@ -306,6 +306,8 @@ class UserController extends Controller
         try {
             $user->save();
 
+            $user->tokens()->delete();
+
             if (isset($data['roles'])) {
                 $user->roles()->sync($data['roles']);
             }
@@ -499,6 +501,8 @@ class UserController extends Controller
         }
 
         $user->save();
+
+        $user->tokens()->delete();
 
         return response()->json([
             'message' => 'Профиль успешно обновлен',
