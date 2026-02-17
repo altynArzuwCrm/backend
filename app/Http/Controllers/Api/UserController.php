@@ -5,11 +5,11 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\UserResource;
 use App\Models\User;
-use App\Models\ProductAssignment;
 use App\Services\CacheService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 
 class UserController extends Controller
@@ -32,7 +32,7 @@ class UserController extends Controller
 
         // Проверяем, нужно ли принудительно обновить кэш
         $cacheTime = $request->has('force_refresh') ? 0 : 900;
-        
+
         $cacheKey = 'users_' . md5($request->fullUrl());
         $result = CacheService::rememberWithTags($cacheKey, $cacheTime, function () use ($request) {
             // Оптимизация: выбираем только необходимые поля
@@ -209,12 +209,6 @@ class UserController extends Controller
                 Storage::disk('public')->delete($imagePath);
             }
 
-            \Log::error('Error creating user', [
-                'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString(),
-                'username' => $data['username'] ?? null
-            ]);
-
             return response()->json([
                 'message' => 'Ошибка при создании пользователя',
                 'error' => config('app.debug') ? $e->getMessage() : null
@@ -306,6 +300,8 @@ class UserController extends Controller
         try {
             $user->save();
 
+            $user->tokens()->delete();
+
             if (isset($data['roles'])) {
                 $user->roles()->sync($data['roles']);
             }
@@ -317,7 +313,7 @@ class UserController extends Controller
                 $user->image = $user->getOriginal('image');
             }
 
-            \Log::error('Error updating user', [
+            Log::error('Error updating user', [
                 'user_id' => $user->id,
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString()
@@ -499,6 +495,8 @@ class UserController extends Controller
         }
 
         $user->save();
+
+        $user->tokens()->delete();
 
         return response()->json([
             'message' => 'Профиль успешно обновлен',
