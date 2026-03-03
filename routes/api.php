@@ -82,6 +82,7 @@ Route::middleware(['auth:sanctum', 'handle.null.relations', 'throttle:300,1'])->
         Route::post('bulk-assign', [OrderAssignmentController::class, 'bulkAssignGlobal']);
         Route::post('bulk-reassign', [OrderAssignmentController::class, 'bulkReassign']);
         Route::post('bulk-update', [OrderAssignmentController::class, 'bulkUpdate']);
+        Route::post('bulk-update-status', [OrderAssignmentController::class, 'bulkUpdateAssignmentStatus']);
     });
 
     Route::get('clients/all', [ClientController::class, 'allClients']);

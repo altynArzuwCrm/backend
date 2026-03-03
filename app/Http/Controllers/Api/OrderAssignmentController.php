@@ -3,12 +3,14 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\BulkUpdateAssignmentStatusRequest;
 use App\Models\Order;
 use App\Models\OrderAssignment;
 use App\Models\User;
 use App\Models\Product;
 use App\Models\Stage;
 use App\Models\OrderStageAssignment;
+use App\Repositories\OrderAssignmentRepository;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Auth;
@@ -19,6 +21,10 @@ use App\Services\CacheService;
 
 class OrderAssignmentController extends Controller
 {
+    public function __construct(
+        protected OrderAssignmentRepository $assignmentRepository
+    ) {}
+
     public function index(Request $request)
     {
         if (Gate::denies('viewAny', OrderAssignment::class)) {
@@ -68,7 +74,7 @@ class OrderAssignmentController extends Controller
             'assigned_stages.*' => 'string|exists:stages,name',
         ]);
 
-        return \DB::transaction(function () use ($data, $order) {
+        return DB::transaction(function () use ($data, $order) {
             $user = User::findOrFail($data['user_id']);
 
             // Проверяем активность пользователя
@@ -400,6 +406,25 @@ class OrderAssignmentController extends Controller
             'total_updated' => count($updatedAssignments),
             'errors' => $errors
         ], !empty($errors) ? 207 : 200);
+    }
+
+    /**
+     * Массовое обновление статуса назначений по списку заказов.
+     */
+    public function bulkUpdateAssignmentStatus(BulkUpdateAssignmentStatusRequest $request)
+    {
+        $result = $this->assignmentRepository->bulkUpdateStatus(
+            $request->validated('order_ids'),
+            $request->validated('status'),
+            Auth::user()
+        );
+
+        return response()->json([
+            'message' => "Обновлено назначений: {$result['updated']}",
+            'updated' => $result['updated'],
+            'total_orders' => count($request->validated('order_ids')),
+            'errors' => $result['errors'],
+        ], $result['updated'] > 0 ? 200 : 422);
     }
 
     public function updateStatus(Request $request, OrderAssignment $assignment)
