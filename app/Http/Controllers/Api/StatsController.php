@@ -121,6 +121,69 @@ class StatsController extends Controller
         return response()->json($revenueData);
     }
 
+    /**
+     * Получить выручку по дням за выбранный месяц
+     */
+    public function revenueByDay(Request $request)
+    {
+        $user = $request->user();
+        if (!$user) {
+            return response()->json(['message' => 'Unauthenticated'], 401);
+        }
+        if (!$user->is_active) {
+            return response()->json(['message' => 'Ваш аккаунт деактивирован'], 403);
+        }
+        if (!$user->isAdminOrManager()) {
+            return response()->json(['message' => 'Недостаточно прав'], 403);
+        }
+
+        $year = (int) $request->get('year', Carbon::now()->year);
+        $month = (int) $request->get('month', Carbon::now()->month);
+
+        $revenueData = Cache::remember("revenue_by_day_{$year}_{$month}", 60, function () use ($year, $month) {
+            $daysInMonth = Carbon::createFromDate($year, $month, 1)->daysInMonth;
+
+            $dailyProjectRevenue = Project::selectRaw('DAY(created_at) as day, SUM(total_price) as revenue')
+                ->whereYear('created_at', $year)
+                ->whereMonth('created_at', $month)
+                ->groupBy('day')
+                ->get()
+                ->keyBy('day');
+
+            $dailyOrderRevenue = Order::selectRaw('DAY(created_at) as day, SUM(price) as revenue')
+                ->whereYear('created_at', $year)
+                ->whereMonth('created_at', $month)
+                ->whereNull('project_id')
+                ->groupBy('day')
+                ->get()
+                ->keyBy('day');
+
+            $result = [];
+            $totalRevenue = 0;
+            for ($day = 1; $day <= $daysInMonth; $day++) {
+                $projectRev = $dailyProjectRevenue->get($day)?->revenue ?? 0;
+                $orderRev = $dailyOrderRevenue->get($day)?->revenue ?? 0;
+                $dayRevenue = $projectRev + $orderRev;
+                $result[] = [
+                    'day' => $day,
+                    'revenue' => $dayRevenue,
+                    'revenue_formatted' => number_format($dayRevenue, 0, '.', ' '),
+                ];
+                $totalRevenue += $dayRevenue;
+            }
+
+            return [
+                'daily_data' => $result,
+                'total_revenue' => $totalRevenue,
+                'total_revenue_formatted' => number_format($totalRevenue, 0, '.', ' '),
+                'year' => $year,
+                'month' => $month,
+            ];
+        });
+
+        return response()->json($revenueData);
+    }
+
     public function dashboard(Request $request)
     {
         $user = $request->user();

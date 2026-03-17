@@ -40,6 +40,7 @@ Route::middleware(['auth:sanctum', 'handle.null.relations', 'throttle:300,1'])->
     Route::get('stats', [StatsController::class, 'index']);
     Route::get('stats/dashboard', [\App\Http\Controllers\Api\StatsController::class, 'dashboard']);
     Route::get('stats/revenue-by-month', [\App\Http\Controllers\Api\StatsController::class, 'revenueByMonth']);
+    Route::get('stats/revenue-by-day', [\App\Http\Controllers\Api\StatsController::class, 'revenueByDay']);
 
     Route::get('recent-activity', [ActivityController::class, 'recent']);
 
