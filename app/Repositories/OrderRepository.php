@@ -29,7 +29,7 @@ class OrderRepository
         }
 
         // Оптимизация: выбираем только необходимые поля для уменьшения размера данных
-        $query = Order::select('id', 'client_id', 'project_id', 'product_id', 'stage_id', 
+        $query = Order::select('id', 'client_id', 'project_id', 'product_id', 'stage_id',
                                'quantity', 'deadline', 'price', 'payment_amount', 'payment_type', 'is_archived', 'created_at', 'updated_at')
             ->with([
                 'project' => function ($q) {
@@ -69,14 +69,14 @@ class OrderRepository
             // Исключаем завершенные и отмененные заказы
             $completedStage = \App\Models\Stage::findByName('completed');
             $cancelledStage = \App\Models\Stage::findByName('cancelled');
-            
+
             if ($completedStage) {
                 $query->where('orders.stage_id', '!=', $completedStage->id);
             }
             if ($cancelledStage) {
                 $query->where('orders.stage_id', '!=', $cancelledStage->id);
             }
-            
+
             // Для обычных пользователей - только их активные задачи на текущей стадии заказа
             if (!$user->hasAnyRole(['admin', 'manager'])) {
                 // Показываем заказы, где у пользователя есть незавершенное назначение
@@ -143,7 +143,7 @@ class OrderRepository
             $stage = \App\Models\Stage::findByName($request->stage);
             if ($stage) {
                 $query->where('stage_id', $stage->id);
-                
+
                 // Для завершенных и отмененных заказов не применяем фильтр is_archived
                 if (in_array($stage->name, ['completed', 'cancelled'])) {
                     $shouldApplyArchiveFilter = false;
@@ -158,7 +158,7 @@ class OrderRepository
 
         if ($request->filled('assignment_status')) {
             $assignmentStatus = $request->assignment_status;
-            
+
             if (!$user->hasAnyRole(['admin', 'manager'])) {
                 // Для обычных пользователей - фильтруем только их назначения
                 $query->whereExists(function ($subquery) use ($assignmentStatus, $user) {
@@ -186,6 +186,11 @@ class OrderRepository
                         ->whereNull('order_assignments.deleted_at');
                 });
             }
+        }
+
+        // Фильтр по дате (created_at)
+        if ($request->filled('date')) {
+            $query->whereDate('orders.created_at', $request->date);
         }
 
         // Поиск - оптимизирован через join вместо whereHas
@@ -272,7 +277,7 @@ class OrderRepository
                 'query' => $orders->getOptions(),
             ];
             Cache::put($cacheKey, $cacheData, $cacheTime);
-            
+
             // Отслеживаем ключ для инвалидации
             $trackingKey = 'cache_keys_' . CacheService::TAG_ORDERS;
             $keys = Cache::get($trackingKey, []);
@@ -291,8 +296,8 @@ class OrderRepository
         $cacheKey = 'order_' . $id;
         return Cache::remember($cacheKey, 1800, function () use ($id) {
             // Оптимизация: загружаем только необходимые поля
-            $order = Order::select('id', 'client_id', 'project_id', 'product_id', 'stage_id', 
-                                  'quantity', 'deadline', 'price', 'payment_amount', 'payment_type', 'is_archived', 'reason', 'reason_status', 
+            $order = Order::select('id', 'client_id', 'project_id', 'product_id', 'stage_id',
+                                  'quantity', 'deadline', 'price', 'payment_amount', 'payment_type', 'is_archived', 'reason', 'reason_status',
                                   'archived_at', 'created_at', 'updated_at')
                 ->with([
                     'project' => function ($q) {
@@ -339,21 +344,21 @@ class OrderRepository
     public function createOrder(array $data): OrderDTO
     {
         $order = Order::create($data);
-        
+
         // Инвалидируем кэш заказов
         CacheService::invalidateOrderCaches();
-        
+
         return OrderDTO::fromModel($order);
     }
 
     public function updateOrder(Order $order, array $data): OrderDTO
     {
         $order->update($data);
-        
+
         // Инвалидируем кэш заказов
         CacheService::invalidateOrderCaches($order->id);
         Cache::forget('order_' . $order->id);
-        
+
         return OrderDTO::fromModel($order);
     }
 
@@ -361,11 +366,11 @@ class OrderRepository
     {
         $orderId = $order->id;
         $result = $order->delete();
-        
+
         // Инвалидируем кэш заказов
         CacheService::invalidateOrderCaches($orderId);
         Cache::forget('order_' . $orderId);
-        
+
         return $result;
     }
 
@@ -418,7 +423,7 @@ class OrderRepository
             $order->is_archived = $item['is_archived'];
             $order->created_at = $item['created_at'] ? \Carbon\Carbon::parse($item['created_at']) : null;
             $order->updated_at = $item['updated_at'] ? \Carbon\Carbon::parse($item['updated_at']) : null;
-            
+
             // Восстанавливаем отношения
             if ($item['project']) {
                 $project = new \App\Models\Project();
@@ -426,14 +431,14 @@ class OrderRepository
                 $project->title = $item['project']['title'];
                 $order->setRelation('project', $project);
             }
-            
+
             if ($item['product']) {
                 $product = new \App\Models\Product();
                 $product->id = $item['product']['id'];
                 $product->name = $item['product']['name'];
                 $order->setRelation('product', $product);
             }
-            
+
             if ($item['client']) {
                 $client = new \App\Models\Client();
                 $client->id = $item['client']['id'];
@@ -441,7 +446,7 @@ class OrderRepository
                 $client->company_name = $item['client']['company_name'];
                 $order->setRelation('client', $client);
             }
-            
+
             if ($item['stage']) {
                 $stage = new \App\Models\Stage();
                 $stage->id = $item['stage']['id'];
@@ -450,7 +455,7 @@ class OrderRepository
                 $stage->color = $item['stage']['color'];
                 $order->setRelation('stage', $stage);
             }
-            
+
             return $order;
         });
 
